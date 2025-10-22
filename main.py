@@ -13,7 +13,7 @@ from bot_service import send_action, get_state, start_game, BOT_TOKEN
 import aiohttp
 
 # ================================================================
-# ⚙️ CONFIGURACIÓN
+# ⚙️ CONFIGURACIÓN GLOBAL
 # ================================================================
 
 logging.basicConfig(
@@ -24,7 +24,8 @@ logging.basicConfig(
 ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 GAME_API_URL = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com")
 SRD_URL = os.getenv("SRD_SERVICE_URL", "https://sam-srdservice.onrender.com")
-CHECK_INTERVAL = 300  # segundos (5 minutos)
+CHECK_INTERVAL = 300  # 5 minutos
+RETRY_DELAY = 30      # segundos entre reintentos
 
 
 # ================================================================
@@ -45,7 +46,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.first_name
-    await update.message.reply_text(f"🧙‍♂️ {user}, te has unido a la partida. ¡Que comience la aventura!")
+    await update.message.reply_text(
+        f"🧙‍♂️ {user}, te has unido a la partida. ¡Que comience la aventura!"
+    )
 
 
 async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -54,7 +57,7 @@ async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ================================================================
-# 🧩 MANEJO DE ACCIONES
+# ⚔️ MANEJO DE ACCIONES
 # ================================================================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,8 +67,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     result = await send_action(player, action)
 
-    # Si no hay partida activa, la iniciamos automáticamente
-    if "error" in result and "No hay partida en curso" in result["error"]:
+    # Si no hay partida activa, iniciar automáticamente
+    if "error" in result and "No hay partida" in result["error"]:
         await update.message.reply_text("🧙‍♂️ No hay partida activa. Iniciando una nueva...")
         start_result = await start_game()
         if "error" in start_result:
@@ -75,12 +78,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Nueva partida iniciada. ¡Adelante, aventurero!")
             result = await send_action(player, action)
 
-    # Si no se pudo conectar al GameAPI
+    # Error de conexión con GameAPI
     if "error" in result:
         await update.message.reply_text(f"⚠️ {result['error']}")
         return
 
-    # Mostrar el resultado de forma más legible
+    # Mostrar resultado legible
     msg = result.get("encounter") or result.get("echo") or result
     if isinstance(msg, dict):
         formatted = "\n".join([f"*{k}:* {v}" for k, v in msg.items()])
@@ -90,11 +93,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ================================================================
-# 🔄 SISTEMA KEEP-ALIVE (para mantener activos los servicios)
+# 🔄 SISTEMA KEEP-ALIVE (monitoreo y reintento)
 # ================================================================
 
 async def ping_service(session, name, url):
-    """Verifica el estado de un servicio y devuelve True/False"""
+    """Verifica la salud del servicio /health"""
     try:
         async with session.get(f"{url}/health", timeout=15) as resp:
             if resp.status == 200:
@@ -108,32 +111,36 @@ async def ping_service(session, name, url):
         return False
 
 
+async def check_and_retry(bot: Bot, session, name, url):
+    """Hace ping, reintenta si falla, y notifica solo si ambos intentos fallan."""
+    ok = await ping_service(session, name, url)
+    if not ok:
+        logging.warning(f"⚠️ {name} parece caído. Reintentando en {RETRY_DELAY}s...")
+        await asyncio.sleep(RETRY_DELAY)
+        ok = await ping_service(session, name, url)
+
+        if not ok:  # segundo fallo
+            msg = f"🚨 *Alerta de conexión S.A.M.*\n❌ {name} no responde tras 2 intentos.\n{url}"
+            if ADMIN_ID:
+                try:
+                    await bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
+                except Exception as e:
+                    logging.error(f"Error enviando alerta a Telegram: {e}")
+    return ok
+
+
 async def keep_alive(bot: Bot):
-    """Mantiene activos GameAPI y SRDService, notificando si hay caídas."""
+    """Monitorea GameAPI y SRDService cada X minutos."""
     logging.info("🔄 Iniciando verificación periódica de servicios...")
     while True:
         async with aiohttp.ClientSession() as session:
-            game_ok = await ping_service(session, "GameAPI", GAME_API_URL)
-            srd_ok = await ping_service(session, "SRDService", SRD_URL)
-
-            # Si alguno falla, notificar al admin
-            if not game_ok or not srd_ok:
-                msg = "🚨 *Alerta de conexión S.A.M.*\n"
-                if not game_ok:
-                    msg += f"❌ GameAPI no responde: {GAME_API_URL}\n"
-                if not srd_ok:
-                    msg += f"❌ SRDService no responde: {SRD_URL}"
-                try:
-                    if ADMIN_ID:
-                        await bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
-                except Exception as e:
-                    logging.error(f"Error enviando alerta a Telegram: {e}")
-
+            await check_and_retry(bot, session, "GameAPI", GAME_API_URL)
+            await check_and_retry(bot, session, "SRDService", SRD_URL)
         await asyncio.sleep(CHECK_INTERVAL)
 
 
 # ================================================================
-# 🚀 MAIN
+# 🚀 INICIALIZACIÓN DEL BOT
 # ================================================================
 
 async def main():
@@ -151,5 +158,5 @@ async def main():
 if __name__ == "__main__":
     bot = Bot(token=BOT_TOKEN)
     loop = asyncio.get_event_loop()
-    loop.create_task(keep_alive(bot))  # ejecuta el monitor de servicios
+    loop.create_task(keep_alive(bot))  # mantiene vivos GameAPI y SRDService
     loop.run_until_complete(main())
