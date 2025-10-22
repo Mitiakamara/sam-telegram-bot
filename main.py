@@ -2,9 +2,10 @@ import os
 import asyncio
 import logging
 import httpx
-import json # Necesario para procesar JSON, aunque ahora lo formateamos diferente
+import json
 from dotenv import load_dotenv
 from telegram import Update, Bot
+from telegram.error import Conflict
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -87,30 +88,23 @@ async def format_encounter_message(encounter_data: dict) -> str:
     xp_total = encounter_data.get("xp_total", 0)
     monsters = encounter_data.get("monsters", [])
     
-    # Contar la ocurrencia de cada tipo de monstruo
     monster_counts = {}
     for monster in monsters:
         name = monster.get("name", "Criatura Desconocida")
         monster_counts[name] = monster_counts.get(name, 0) + 1
 
-    # Construir la lista de enemigos
     enemy_list = []
     for name, count in monster_counts.items():
-        # Busca el primer objeto del monstruo para obtener sus stats
         stats = next((m for m in monsters if m.get("name") == name), {})
-        
         cr = stats.get("cr", "N/A")
         hp = stats.get("hp", "N/A")
         ac = stats.get("ac", "N/A")
         attack = stats.get("attack", "N/A")
-        
         line = f"*{count}x {name}* (CR {cr}): HP {hp}, AC {ac}, Ataque {attack}"
         enemy_list.append(line)
 
-    # Construir el mensaje final
     header = f"⚔️ *¡Encuentro de Combate!* (Dificultad: {difficulty.upper()})"
     xp_info = f"🪙 Experiencia total: {xp_total} XP"
-    
     enemies_section = "👹 *Enemigos:*\n" + "\n".join(enemy_list)
     
     return f"{header}\n\n{xp_info}\n\n{enemies_section}"
@@ -123,7 +117,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     result = await send_action(player, action)
 
-    # 1. Manejo de inicio de partida si no hay sesión activa
     if "error" in result and "No hay partida" in result["error"]:
         await update.message.reply_text("🧙 No hay partida activa. Iniciando una nueva...")
         start_result = await start_game()
@@ -133,37 +126,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         else:
             await update.message.reply_text("✅ Nueva partida iniciada. ¡Comienza la aventura!")
-            # Vuelve a intentar la acción original
             result = await send_action(player, action)
 
-    # 2. Manejo de errores generales de la API
     if "error" in result:
         await update.message.reply_text(f"⚠️ {result['error']}")
         return
 
-    # 3. Presentación de resultados con formato
-    
-    # Detecta si es un encuentro y usa el formato legible
     if "encounter" in result:
         message = await format_encounter_message(result["encounter"])
-        await update.message.reply_text(
-            message, 
-            parse_mode="Markdown"
-        )
-    
-    # Detecta si es un mensaje de 'echo' (narración simple)
+        await update.message.reply_text(message, parse_mode="Markdown")
+
     elif "echo" in result:
         await update.message.reply_text(
-            f"💬 *Narrador:*\n_{result['echo']}_", 
-            parse_mode="Markdown"
+            f"💬 *Narrador:*\n_{result['echo']}_", parse_mode="Markdown"
         )
-    
-    # Si no es 'encounter' ni 'echo', muestra el resultado JSON completo para depuración
+
     else:
         formatted = json.dumps(result, indent=2, ensure_ascii=False)
         await update.message.reply_text(
-            f"📜 *Resultado sin formato:*\n```json\n{formatted}\n```", 
-            parse_mode="Markdown"
+            f"📜 *Resultado sin formato:*\n```json\n{formatted}\n```", parse_mode="Markdown"
         )
 
 # ================================================================
@@ -189,43 +170,16 @@ async def keep_alive(bot: Bot):
     while True:
         await check_service_health("GameAPI", f"{GAME_API_URL}/health")
         await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
-        await asyncio.sleep(300)  # 5 minutos
+        await asyncio.sleep(300)
 
 # ================================================================
-# 🚀 EJECUCIÓN PRINCIPAL (Render-Safe)
+# 🚨 MANEJO GLOBAL DE ERRORES
 # ================================================================
 
-async def post_init_tasks(app: Application):
-    """Callback ejecutado por PTB después de la inicialización, antes del polling.
-    Usado para iniciar tareas en segundo plano como el keep-alive."""
-    bot = app.bot 
-    
-    # Ejecuta keep_alive en segundo plano como una tarea asíncrona
-    asyncio.create_task(keep_alive(bot))
-    logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
-
-def main():
-    """Inicializa el bot de Telegram y el keep-alive loop usando post_init."""
-    if not BOT_TOKEN:
-        logging.error("❌ TELEGRAM_BOT_TOKEN no está configurado. Abortando.")
-        return
-        
-    # Construir la aplicación e inyectar la tarea de keep-alive en post_init
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init_tasks).build()
-
-    # Añadir Handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("join", join))
-    app.add_handler(CommandHandler("state", state))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Inicia el polling. Esta función es de bloqueo y maneja el loop de asyncio.
-    logging.info("🚀 Iniciando Polling. Esto bloqueará la ejecución.")
-    app.run_polling() 
-
-
-if __name__ == "__main__":
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador global de errores para evitar que Render tumbe el bot."""
     try:
-        main()
-    except KeyboardInterrupt:
-        logging.info("🛑 S.A.M. detenido manualmente.")
+        raise context.error
+    except Conflict:
+        logging.warning("⚠️ Conflicto detectado: otra instancia del bot está corriendo.")
+    ex
