@@ -2,8 +2,7 @@ import os
 import asyncio
 import logging
 import httpx
-# Se añade 'json' para formatear las respuestas de la API
-import json 
+import json # Necesario para procesar JSON, aunque ahora lo formateamos diferente
 from dotenv import load_dotenv
 from telegram import Update, Bot
 from telegram.ext import (
@@ -81,6 +80,42 @@ async def start_game():
         return {"error": f"Error iniciando partida: {e}"}
 
 
+async def format_encounter_message(encounter_data: dict) -> str:
+    """Formatea la respuesta de encuentro JSON en un mensaje legible."""
+    
+    difficulty = encounter_data.get("difficulty", "desconocida")
+    xp_total = encounter_data.get("xp_total", 0)
+    monsters = encounter_data.get("monsters", [])
+    
+    # Contar la ocurrencia de cada tipo de monstruo
+    monster_counts = {}
+    for monster in monsters:
+        name = monster.get("name", "Criatura Desconocida")
+        monster_counts[name] = monster_counts.get(name, 0) + 1
+
+    # Construir la lista de enemigos
+    enemy_list = []
+    for name, count in monster_counts.items():
+        # Busca el primer objeto del monstruo para obtener sus stats
+        stats = next((m for m in monsters if m.get("name") == name), {})
+        
+        cr = stats.get("cr", "N/A")
+        hp = stats.get("hp", "N/A")
+        ac = stats.get("ac", "N/A")
+        attack = stats.get("attack", "N/A")
+        
+        line = f"*{count}x {name}* (CR {cr}): HP {hp}, AC {ac}, Ataque {attack}"
+        enemy_list.append(line)
+
+    # Construir el mensaje final
+    header = f"⚔️ *¡Encuentro de Combate!* (Dificultad: {difficulty.upper()})"
+    xp_info = f"🪙 Experiencia total: {xp_total} XP"
+    
+    enemies_section = "👹 *Enemigos:*\n" + "\n".join(enemy_list)
+    
+    return f"{header}\n\n{xp_info}\n\n{enemies_section}"
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = update.effective_user.first_name
     action = update.message.text.strip()
@@ -106,15 +141,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ {result['error']}")
         return
 
-    # 3. Presentación de resultados con formato (JSON, Echo, o Default)
+    # 3. Presentación de resultados con formato
     
-    # Detecta si es un encuentro (probablemente un combate)
+    # Detecta si es un encuentro y usa el formato legible
     if "encounter" in result:
-        encounter = result["encounter"]
-        # Formatea el JSON para una mejor lectura
-        formatted = json.dumps(encounter, indent=2, ensure_ascii=False)
+        message = await format_encounter_message(result["encounter"])
         await update.message.reply_text(
-            f"🪓 *Encuentro generado:*\n```json\n{formatted}\n```", 
+            message, 
             parse_mode="Markdown"
         )
     
@@ -125,12 +158,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     
-    # Si no es 'encounter' ni 'echo', muestra el resultado JSON completo
+    # Si no es 'encounter' ni 'echo', muestra el resultado JSON completo para depuración
     else:
-        # Formatea el resultado completo para propósitos de depuración o información detallada
         formatted = json.dumps(result, indent=2, ensure_ascii=False)
         await update.message.reply_text(
-            f"📜 *Resultado:*\n```json\n{formatted}\n```", 
+            f"📜 *Resultado sin formato:*\n```json\n{formatted}\n```", 
             parse_mode="Markdown"
         )
 
