@@ -71,7 +71,7 @@ async def start_game():
     """Inicia una nueva partida en el GameAPI."""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            payload = {"party_levels": [3, 3, 4]}  # ejemplo de grupo
+            payload = {"party_levels": [3, 3, 4]}  # grupo base de ejemplo
             r = await client.post(f"{GAME_API_URL}/game/start", json=payload)
             r.raise_for_status()
             return r.json()
@@ -127,10 +127,11 @@ async def keep_alive(bot: Bot):
         await asyncio.sleep(300)  # 5 minutos
 
 # ================================================================
-# 🚀 INICIALIZACIÓN DEL BOT (Render-ready)
+# 🚀 EJECUCIÓN PRINCIPAL (Render-Safe)
 # ================================================================
 
-async def main():
+async def run_bot():
+    """Inicializa el bot de Telegram y el keep-alive loop."""
     bot = Bot(token=BOT_TOKEN)
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -139,15 +140,22 @@ async def main():
     app.add_handler(CommandHandler("state", state))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Inicia keep_alive sin bloquear el loop principal
+    # Ejecuta keep_alive en segundo plano sin bloquear run_polling
     asyncio.create_task(keep_alive(bot))
 
     logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
-    await app.run_polling(close_loop=False)
+    await app.run_polling()
 
+def main():
+    """Wrapper para evitar conflictos del loop de asyncio en Render."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(run_bot())
+    except KeyboardInterrupt:
+        logging.info("🛑 S.A.M. detenido manualmente.")
+    finally:
+        loop.close()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logging.info("🛑 S.A.M. detenido manualmente.")
+    main()
