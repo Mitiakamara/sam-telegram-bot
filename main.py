@@ -2,6 +2,8 @@ import os
 import asyncio
 import logging
 import httpx
+# Se añade 'json' para formatear las respuestas de la API
+import json 
 from dotenv import load_dotenv
 from telegram import Update, Bot
 from telegram.ext import (
@@ -86,20 +88,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     result = await send_action(player, action)
 
+    # 1. Manejo de inicio de partida si no hay sesión activa
     if "error" in result and "No hay partida" in result["error"]:
         await update.message.reply_text("🧙 No hay partida activa. Iniciando una nueva...")
         start_result = await start_game()
+        
         if "error" in start_result:
             await update.message.reply_text(f"⚠️ Error al iniciar partida: {start_result['error']}")
+            return
         else:
             await update.message.reply_text("✅ Nueva partida iniciada. ¡Comienza la aventura!")
+            # Vuelve a intentar la acción original
             result = await send_action(player, action)
 
+    # 2. Manejo de errores generales de la API
     if "error" in result:
         await update.message.reply_text(f"⚠️ {result['error']}")
+        return
+
+    # 3. Presentación de resultados con formato (JSON, Echo, o Default)
+    
+    # Detecta si es un encuentro (probablemente un combate)
+    if "encounter" in result:
+        encounter = result["encounter"]
+        # Formatea el JSON para una mejor lectura
+        formatted = json.dumps(encounter, indent=2, ensure_ascii=False)
+        await update.message.reply_text(
+            f"🪓 *Encuentro generado:*\n```json\n{formatted}\n```", 
+            parse_mode="Markdown"
+        )
+    
+    # Detecta si es un mensaje de 'echo' (narración simple)
+    elif "echo" in result:
+        await update.message.reply_text(
+            f"💬 *Narrador:*\n_{result['echo']}_", 
+            parse_mode="Markdown"
+        )
+    
+    # Si no es 'encounter' ni 'echo', muestra el resultado JSON completo
     else:
-        msg = result.get("encounter") or result.get("echo") or result
-        await update.message.reply_text(f"🎲 Resultado:\n{msg}")
+        # Formatea el resultado completo para propósitos de depuración o información detallada
+        formatted = json.dumps(result, indent=2, ensure_ascii=False)
+        await update.message.reply_text(
+            f"📜 *Resultado:*\n```json\n{formatted}\n```", 
+            parse_mode="Markdown"
+        )
 
 # ================================================================
 # 🔄 SISTEMA KEEP-ALIVE
