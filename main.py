@@ -13,9 +13,8 @@ from telegram.ext import (
 )
 
 # ================================================================
-# ⚙️ CONFIGURACIÓN INICIAL
+# ⚙️ CONFIGURACIÓN
 # ================================================================
-
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -28,9 +27,8 @@ logging.basicConfig(
 )
 
 # ================================================================
-# 🧠 FUNCIONES PRINCIPALES DEL BOT
+# 🧠 FUNCIONES DEL BOT
 # ================================================================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🌟 Bienvenido a *S.A.M.*, tu Dungeon Master virtual.\n"
@@ -48,15 +46,7 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🧙‍♂️ {user}, te has unido a la partida. ¡Que comience la aventura!"
     )
 
-async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📜 Estado de la partida: pronto disponible.")
-
-# ================================================================
-# 🎲 MANEJO DE ACCIONES
-# ================================================================
-
 async def send_action(player: str, action: str) -> dict:
-    """Envía la acción del jugador al GameAPI."""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             payload = {"player": player, "action": action}
@@ -66,18 +56,15 @@ async def send_action(player: str, action: str) -> dict:
     except Exception as e:
         return {"error": f"No se pudo conectar al GameAPI: {e}"}
 
-
-async def start_game():
-    """Inicia una nueva partida en el GameAPI."""
+async def start_game() -> dict:
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            payload = {"party_levels": [3, 3, 4]}  # grupo base de ejemplo
+            payload = {"party_levels": [3, 3, 4]}
             r = await client.post(f"{GAME_API_URL}/game/start", json=payload)
             r.raise_for_status()
             return r.json()
     except Exception as e:
         return {"error": f"Error iniciando partida: {e}"}
-
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = update.effective_user.first_name
@@ -102,11 +89,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🎲 Resultado:\n{msg}")
 
 # ================================================================
-# 🔄 SISTEMA KEEP-ALIVE
+# 🔄 KEEP-ALIVE PARA SRD Y GAMEAPI
 # ================================================================
-
 async def check_service_health(name: str, url: str):
-    """Verifica que los microservicios SRD y GameAPI sigan activos."""
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.get(url)
@@ -117,56 +102,29 @@ async def check_service_health(name: str, url: str):
     except Exception as e:
         logging.error(f"❌ {name} inalcanzable: {e}")
 
-
-async def keep_alive(bot: Bot):
-    """Realiza un ping cada 5 minutos a SRD y GameAPI para evitar el sleep."""
+async def keep_alive():
     logging.info("🔄 Iniciando verificación periódica de servicios...")
     while True:
         await check_service_health("GameAPI", f"{GAME_API_URL}/health")
         await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
         await asyncio.sleep(300)  # 5 minutos
 
-
 # ================================================================
-# 🚀 EJECUCIÓN PRINCIPAL (Render-Safe)
+# 🚀 ARRANQUE PRINCIPAL (sin conflicto de event loop)
 # ================================================================
-
-# [MODIFICACIÓN 1: Función Asíncrona para iniciar tareas en segundo plano]
-async def run_bot_tasks(context: Application):
-    """Inicializa tareas de fondo como keep-alive antes de que el bot comience a escuchar."""
-    # El objeto Bot se obtiene del Application para el keep_alive
-    bot = context.bot 
-    
-    # Ejecuta keep_alive en segundo plano sin bloquear run_polling
-    asyncio.create_task(keep_alive(bot))
-    logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
-
-# [MODIFICACIÓN 2: Simplificación de la función main]
-def main():
-    """Inicializa el bot de Telegram y el keep-alive loop usando PTB para manejar el asyncio loop."""
-    if not BOT_TOKEN:
-        logging.error("❌ TELEGRAM_BOT_TOKEN no está configurado. Abortando.")
-        return
-        
+async def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Añadir Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
-    app.add_handler(CommandHandler("state", state))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # Inicia las tareas de fondo (como keep_alive) y los mensajes de inicio
-    app.run_in_background(run_bot_tasks, app)
 
-    # Inicia el polling. Esta función es de bloqueo y maneja el loop de asyncio.
-    logging.info("🚀 Iniciando Polling. Esto bloqueará la ejecución.")
-    app.run_polling() 
+    # Lanza el keep_alive sin bloquear run_polling
+    asyncio.create_task(keep_alive())
 
+    logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
+    await app.run_polling(close_loop=False)
 
-# [MODIFICACIÓN 3: Bloque de ejecución principal más simple]
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        logging.info("🛑 S.A.M. detenido manualmente.")
+    # Usa asyncio.run() directamente — Telegram maneja bien el loop desde v21.6
+    asyncio.run(main())
