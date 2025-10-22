@@ -126,36 +126,47 @@ async def keep_alive(bot: Bot):
         await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
         await asyncio.sleep(300)  # 5 minutos
 
+
 # ================================================================
 # 🚀 EJECUCIÓN PRINCIPAL (Render-Safe)
 # ================================================================
 
-async def run_bot():
-    """Inicializa el bot de Telegram y el keep-alive loop."""
-    bot = Bot(token=BOT_TOKEN)
+# [MODIFICACIÓN 1: Función Asíncrona para iniciar tareas en segundo plano]
+async def run_bot_tasks(context: Application):
+    """Inicializa tareas de fondo como keep-alive antes de que el bot comience a escuchar."""
+    # El objeto Bot se obtiene del Application para el keep_alive
+    bot = context.bot 
+    
+    # Ejecuta keep_alive en segundo plano sin bloquear run_polling
+    asyncio.create_task(keep_alive(bot))
+    logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
+
+# [MODIFICACIÓN 2: Simplificación de la función main]
+def main():
+    """Inicializa el bot de Telegram y el keep-alive loop usando PTB para manejar el asyncio loop."""
+    if not BOT_TOKEN:
+        logging.error("❌ TELEGRAM_BOT_TOKEN no está configurado. Abortando.")
+        return
+        
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Añadir Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("state", state))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Inicia las tareas de fondo (como keep_alive) y los mensajes de inicio
+    app.run_in_background(run_bot_tasks, app)
 
-    # Ejecuta keep_alive en segundo plano sin bloquear run_polling
-    asyncio.create_task(keep_alive(bot))
+    # Inicia el polling. Esta función es de bloqueo y maneja el loop de asyncio.
+    logging.info("🚀 Iniciando Polling. Esto bloqueará la ejecución.")
+    app.run_polling() 
 
-    logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
-    await app.run_polling()
 
-def main():
-    """Wrapper para evitar conflictos del loop de asyncio en Render."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+# [MODIFICACIÓN 3: Bloque de ejecución principal más simple]
+if __name__ == "__main__":
     try:
-        loop.run_until_complete(run_bot())
+        main()
     except KeyboardInterrupt:
         logging.info("🛑 S.A.M. detenido manualmente.")
-    finally:
-        loop.close()
-
-if __name__ == "__main__":
-    main()
