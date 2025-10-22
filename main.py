@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from telegram import Update
+import os
+from telegram import Update, Bot
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -8,107 +9,52 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from bot_service import send_action, get_state, BOT_TOKEN
+from bot_service import send_action, get_state, start_game, BOT_TOKEN
+import aiohttp
+
+# ================================================================
+# ⚙️ CONFIGURACIÓN
+# ================================================================
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+    level=logging.INFO,
 )
 
-# ================================================================
-# 🧙‍♀️ Funciones narrativas y formateo
-# ================================================================
-
-def format_encounter(data: dict) -> str:
-    """Convierte un encuentro de combate en texto legible."""
-    try:
-        encounter = data.get("encounter", {})
-        difficulty = encounter.get("difficulty", "desconocida").capitalize()
-        xp_target = encounter.get("xp_target", 0)
-        xp_total = encounter.get("xp_total", 0)
-        avg_lvl = encounter.get("party_avg_lvl", "?")
-
-        monsters = encounter.get("monsters", [])
-        monster_lines = []
-        for m in monsters:
-            line = f"- {m.get('name', '¿?')} (HP: {m.get('hp', '?')}, CA: {m.get('ac', '?')}, ATK: {m.get('attack', '?')})"
-            traits = m.get("traits")
-            if traits:
-                line += f" 🧩 Rasgos: {', '.join(traits)}"
-            monster_lines.append(line)
-
-        return (
-            f"🎲 *Encuentro generado*\n"
-            f"Dificultad: *{difficulty}*\n"
-            f"XP objetivo: {xp_target}\n"
-            f"XP total: {xp_total}\n"
-            f"Nivel promedio del grupo: {avg_lvl}\n\n"
-            f"👾 *Monstruos:*\n" + "\n".join(monster_lines)
-        )
-    except Exception as e:
-        logging.error(f"Error al formatear encuentro: {e}")
-        return str(data)
-
-
-def format_narrative(data: dict) -> str:
-    """Formatea texto narrativo o de exploración."""
-    story = data.get("story_state", {})
-    scene = story.get("scene", "??").capitalize().replace("_", " ")
-    objective = story.get("objective", "")
-    narrative = data.get("narrative", data.get("echo", ""))
-
-    msg = f"📜 *Escena:* {scene}\n🎯 *Objetivo:* {objective}\n\n{narrative}"
-    return msg
-
-
-def format_resume(state: dict) -> str:
-    """Muestra un resumen de partida al retomar una sesión."""
-    scene = state.get("story_state", {}).get("scene", "intro")
-    objective = state.get("story_state", {}).get("objective", "")
-    events = state.get("story_state", {}).get("events_completed", 0)
-    msg = (
-        "🕯 *Reanudando tu aventura...*\n\n"
-        f"Escena actual: *{scene}*\n"
-        f"Objetivo: {objective}\n"
-        f"Eventos completados: {events}\n\n"
-        "✨ Estás de vuelta en el mundo de S.A.M."
-    )
-    return msg
+ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
+GAME_API_URL = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com")
+SRD_URL = os.getenv("SRD_SERVICE_URL", "https://sam-srdservice.onrender.com")
+CHECK_INTERVAL = 300  # segundos (5 minutos)
 
 
 # ================================================================
-# 🔹 Comandos base del bot
+# 🤖 COMANDOS PRINCIPALES
 # ================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mensaje de bienvenida."""
     await update.message.reply_text(
         "🌟 Bienvenido a *S.A.M.*, tu Dungeon Master virtual.\n"
         "Usa /join para unirte a la aventura o escribe directamente tus acciones.\n\n"
         "Por ejemplo:\n"
-        "👉 *combat medium*\n"
-        "👉 *explore dungeon*\n"
-        "👉 *rest junto a la fogata*",
-        parse_mode="Markdown"
+        "👉 combat medium\n"
+        "👉 explore dungeon\n"
+        "👉 rest junto a la fogata",
+        parse_mode="Markdown",
     )
 
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Une al jugador a la partida."""
     user = update.effective_user.first_name
-    await update.message.reply_text(
-        f"🧙‍♂️ {user}, te has unido a la partida. ¡Que comience la aventura!"
-    )
+    await update.message.reply_text(f"🧙‍♂️ {user}, te has unido a la partida. ¡Que comience la aventura!")
 
 
 async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Consulta el estado actual del juego."""
     state_data = await get_state()
-    await update.message.reply_text(format_resume(state_data), parse_mode="Markdown")
+    await update.message.reply_text(f"📜 Estado actual:\n{state_data}")
 
 
 # ================================================================
-# 🔸 Núcleo del sistema de mensajes
+# 🧩 MANEJO DE ACCIONES
 # ================================================================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,47 +62,81 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = update.message.text.strip()
     logging.info(f"[{player}] Acción recibida: {action}")
 
-    # Enviar acción al GameAPI
     result = await send_action(player, action)
 
-    # Si no hay partida, crear una nueva automáticamente
+    # Si no hay partida activa, la iniciamos automáticamente
     if "error" in result and "No hay partida en curso" in result["error"]:
-        await update.message.reply_text("🕹 No hay partida activa. Iniciando una nueva...")
-        from bot_service import start_game
+        await update.message.reply_text("🧙‍♂️ No hay partida activa. Iniciando una nueva...")
         start_result = await start_game()
         if "error" in start_result:
             await update.message.reply_text(f"⚠️ Error al iniciar partida: {start_result['error']}")
             return
-        await update.message.reply_text("✅ Nueva partida creada. Reintentando acción...")
-        result = await send_action(player, action)
+        else:
+            await update.message.reply_text("✅ Nueva partida iniciada. ¡Adelante, aventurero!")
+            result = await send_action(player, action)
 
-    # Interpretar el tipo de respuesta
+    # Si no se pudo conectar al GameAPI
     if "error" in result:
-        await update.message.reply_text(f"⚠️ Error: {result['error']}")
+        await update.message.reply_text(f"⚠️ {result['error']}")
         return
 
-    # Combate
-    if "encounter" in result:
-        msg = format_encounter(result)
-        await update.message.reply_text(msg, parse_mode="Markdown")
-        return
-
-    # Narrativa / exploración / descanso
-    if "narrative" in result or "story_state" in result:
-        msg = format_narrative(result)
-        await update.message.reply_text(msg, parse_mode="Markdown")
-        return
-
-    # Eco o respuesta genérica
-    msg = result.get("message") or result.get("echo") or str(result)
-    await update.message.reply_text(f"💬 {msg}")
+    # Mostrar el resultado de forma más legible
+    msg = result.get("encounter") or result.get("echo") or result
+    if isinstance(msg, dict):
+        formatted = "\n".join([f"*{k}:* {v}" for k, v in msg.items()])
+        await update.message.reply_text(f"🎲 Resultado:\n{formatted}", parse_mode="Markdown")
+    else:
+        await update.message.reply_text(f"🎲 Resultado:\n{msg}")
 
 
 # ================================================================
-# 🚀 Ejecución del bot
+# 🔄 SISTEMA KEEP-ALIVE (para mantener activos los servicios)
 # ================================================================
 
-def main():
+async def ping_service(session, name, url):
+    """Verifica el estado de un servicio y devuelve True/False"""
+    try:
+        async with session.get(f"{url}/health", timeout=15) as resp:
+            if resp.status == 200:
+                logging.info(f"✅ {name} está activo ({url})")
+                return True
+            else:
+                logging.warning(f"⚠️ {name} respondió con {resp.status}")
+                return False
+    except Exception as e:
+        logging.error(f"❌ {name} no respondió: {e}")
+        return False
+
+
+async def keep_alive(bot: Bot):
+    """Mantiene activos GameAPI y SRDService, notificando si hay caídas."""
+    logging.info("🔄 Iniciando verificación periódica de servicios...")
+    while True:
+        async with aiohttp.ClientSession() as session:
+            game_ok = await ping_service(session, "GameAPI", GAME_API_URL)
+            srd_ok = await ping_service(session, "SRDService", SRD_URL)
+
+            # Si alguno falla, notificar al admin
+            if not game_ok or not srd_ok:
+                msg = "🚨 *Alerta de conexión S.A.M.*\n"
+                if not game_ok:
+                    msg += f"❌ GameAPI no responde: {GAME_API_URL}\n"
+                if not srd_ok:
+                    msg += f"❌ SRDService no responde: {SRD_URL}"
+                try:
+                    if ADMIN_ID:
+                        await bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
+                except Exception as e:
+                    logging.error(f"Error enviando alerta a Telegram: {e}")
+
+        await asyncio.sleep(CHECK_INTERVAL)
+
+
+# ================================================================
+# 🚀 MAIN
+# ================================================================
+
+async def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -165,8 +145,11 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
-    app.run_polling()
+    await app.run_polling()
 
 
 if __name__ == "__main__":
-    main()
+    bot = Bot(token=BOT_TOKEN)
+    loop = asyncio.get_event_loop()
+    loop.create_task(keep_alive(bot))  # ejecuta el monitor de servicios
+    loop.run_until_complete(main())
