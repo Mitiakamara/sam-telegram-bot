@@ -172,14 +172,4 @@ async def keep_alive(bot: Bot):
         await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
         await asyncio.sleep(300)
 
-# ================================================================
-# 🚨 MANEJO GLOBAL DE ERRORES
-# ================================================================
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manejador global de errores para evitar que Render tumbe el bot."""
-    try:
-        raise context.error
-    except Conflict:
-        logging.warning("⚠️ Conflicto detectado: otra instancia del bot está corriendo.")
-    ex
+# ====================================================
