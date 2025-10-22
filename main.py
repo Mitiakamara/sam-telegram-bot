@@ -126,45 +126,39 @@ async def keep_alive(bot: Bot):
         await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
         await asyncio.sleep(300)  # 5 minutos
 
-
 # ================================================================
 # 🚀 EJECUCIÓN PRINCIPAL (Render-Safe)
 # ================================================================
 
-# [MODIFICACIÓN 1: Función Asíncrona para iniciar tareas en segundo plano]
-async def run_bot_tasks(context: Application):
-    """Inicializa tareas de fondo como keep-alive antes de que el bot comience a escuchar."""
-    # El objeto Bot se obtiene del Application para el keep_alive
-    bot = context.bot 
+async def post_init_tasks(app: Application):
+    """Callback ejecutado por PTB después de la inicialización, antes del polling.
+    Usado para iniciar tareas en segundo plano como el keep-alive."""
+    bot = app.bot 
     
-    # Ejecuta keep_alive en segundo plano sin bloquear run_polling
+    # Ejecuta keep_alive en segundo plano como una tarea asíncrona
     asyncio.create_task(keep_alive(bot))
     logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
 
-# [MODIFICACIÓN 2: Simplificación de la función main]
 def main():
-    """Inicializa el bot de Telegram y el keep-alive loop usando PTB para manejar el asyncio loop."""
+    """Inicializa el bot de Telegram y el keep-alive loop usando post_init."""
     if not BOT_TOKEN:
         logging.error("❌ TELEGRAM_BOT_TOKEN no está configurado. Abortando.")
         return
         
-    app = Application.builder().token(BOT_TOKEN).build()
+    # Construir la aplicación e inyectar la tarea de keep-alive en post_init
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init_tasks).build()
 
     # Añadir Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("state", state))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # Inicia las tareas de fondo (como keep_alive) y los mensajes de inicio
-    app.run_in_background(run_bot_tasks, app)
 
     # Inicia el polling. Esta función es de bloqueo y maneja el loop de asyncio.
     logging.info("🚀 Iniciando Polling. Esto bloqueará la ejecución.")
     app.run_polling() 
 
 
-# [MODIFICACIÓN 3: Bloque de ejecución principal más simple]
 if __name__ == "__main__":
     try:
         main()
