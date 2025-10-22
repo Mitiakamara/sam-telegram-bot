@@ -1,6 +1,8 @@
+import os
 import asyncio
 import logging
-import os
+import httpx
+from dotenv import load_dotenv
 from telegram import Update, Bot
 from telegram.ext import (
     Application,
@@ -9,27 +11,24 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from bot_service import send_action, get_state, start_game, BOT_TOKEN
-import aiohttp
 
 # ================================================================
-# ⚙️ CONFIGURACIÓN GLOBAL
+# ⚙️ CONFIGURACIÓN INICIAL
 # ================================================================
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+GAME_API_URL = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com")
+SRD_SERVICE_URL = os.getenv("SRD_SERVICE_URL", "https://sam-srdservice.onrender.com")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+    level=logging.INFO
 )
 
-ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
-GAME_API_URL = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com")
-SRD_URL = os.getenv("SRD_SERVICE_URL", "https://sam-srdservice.onrender.com")
-CHECK_INTERVAL = 300  # 5 minutos
-RETRY_DELAY = 30      # segundos entre reintentos
-
-
 # ================================================================
-# 🤖 COMANDOS PRINCIPALES
+# 🧠 FUNCIONES PRINCIPALES DEL BOT
 # ================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -40,9 +39,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👉 combat medium\n"
         "👉 explore dungeon\n"
         "👉 rest junto a la fogata",
-        parse_mode="Markdown",
+        parse_mode="Markdown"
     )
-
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.first_name
@@ -50,15 +48,36 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🧙‍♂️ {user}, te has unido a la partida. ¡Que comience la aventura!"
     )
 
-
 async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    state_data = await get_state()
-    await update.message.reply_text(f"📜 Estado actual:\n{state_data}")
-
+    await update.message.reply_text("📜 Estado de la partida: pronto disponible.")
 
 # ================================================================
-# ⚔️ MANEJO DE ACCIONES
+# 🎲 MANEJO DE ACCIONES
 # ================================================================
+
+async def send_action(player: str, action: str) -> dict:
+    """Envía la acción del jugador al GameAPI."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            payload = {"player": player, "action": action}
+            r = await client.post(f"{GAME_API_URL}/game/action", json=payload)
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        return {"error": f"No se pudo conectar al GameAPI: {e}"}
+
+
+async def start_game():
+    """Inicia una nueva partida en el GameAPI."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            payload = {"party_levels": [3, 3, 4]}  # ejemplo de grupo
+            r = await client.post(f"{GAME_API_URL}/game/start", json=payload)
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        return {"error": f"Error iniciando partida: {e}"}
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = update.effective_user.first_name
@@ -67,83 +86,52 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     result = await send_action(player, action)
 
-    # Si no hay partida activa, iniciar automáticamente
     if "error" in result and "No hay partida" in result["error"]:
-        await update.message.reply_text("🧙‍♂️ No hay partida activa. Iniciando una nueva...")
+        await update.message.reply_text("🧙 No hay partida activa. Iniciando una nueva...")
         start_result = await start_game()
         if "error" in start_result:
             await update.message.reply_text(f"⚠️ Error al iniciar partida: {start_result['error']}")
-            return
         else:
-            await update.message.reply_text("✅ Nueva partida iniciada. ¡Adelante, aventurero!")
+            await update.message.reply_text("✅ Nueva partida iniciada. ¡Comienza la aventura!")
             result = await send_action(player, action)
 
-    # Error de conexión con GameAPI
     if "error" in result:
         await update.message.reply_text(f"⚠️ {result['error']}")
-        return
-
-    # Mostrar resultado legible
-    msg = result.get("encounter") or result.get("echo") or result
-    if isinstance(msg, dict):
-        formatted = "\n".join([f"*{k}:* {v}" for k, v in msg.items()])
-        await update.message.reply_text(f"🎲 Resultado:\n{formatted}", parse_mode="Markdown")
     else:
+        msg = result.get("encounter") or result.get("echo") or result
         await update.message.reply_text(f"🎲 Resultado:\n{msg}")
 
-
 # ================================================================
-# 🔄 SISTEMA KEEP-ALIVE (monitoreo y reintento)
+# 🔄 SISTEMA KEEP-ALIVE
 # ================================================================
 
-async def ping_service(session, name, url):
-    """Verifica la salud del servicio /health"""
+async def check_service_health(name: str, url: str):
+    """Verifica que los microservicios SRD y GameAPI sigan activos."""
     try:
-        async with session.get(f"{url}/health", timeout=15) as resp:
-            if resp.status == 200:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(url)
+            if r.status_code == 200:
                 logging.info(f"✅ {name} está activo ({url})")
-                return True
             else:
-                logging.warning(f"⚠️ {name} respondió con {resp.status}")
-                return False
+                logging.warning(f"⚠️ {name} respondió con {r.status_code}")
     except Exception as e:
-        logging.error(f"❌ {name} no respondió: {e}")
-        return False
-
-
-async def check_and_retry(bot: Bot, session, name, url):
-    """Hace ping, reintenta si falla, y notifica solo si ambos intentos fallan."""
-    ok = await ping_service(session, name, url)
-    if not ok:
-        logging.warning(f"⚠️ {name} parece caído. Reintentando en {RETRY_DELAY}s...")
-        await asyncio.sleep(RETRY_DELAY)
-        ok = await ping_service(session, name, url)
-
-        if not ok:  # segundo fallo
-            msg = f"🚨 *Alerta de conexión S.A.M.*\n❌ {name} no responde tras 2 intentos.\n{url}"
-            if ADMIN_ID:
-                try:
-                    await bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
-                except Exception as e:
-                    logging.error(f"Error enviando alerta a Telegram: {e}")
-    return ok
+        logging.error(f"❌ {name} inalcanzable: {e}")
 
 
 async def keep_alive(bot: Bot):
-    """Monitorea GameAPI y SRDService cada X minutos."""
+    """Realiza un ping cada 5 minutos a SRD y GameAPI para evitar el sleep."""
     logging.info("🔄 Iniciando verificación periódica de servicios...")
     while True:
-        async with aiohttp.ClientSession() as session:
-            await check_and_retry(bot, session, "GameAPI", GAME_API_URL)
-            await check_and_retry(bot, session, "SRDService", SRD_URL)
-        await asyncio.sleep(CHECK_INTERVAL)
-
+        await check_service_health("GameAPI", f"{GAME_API_URL}/health")
+        await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
+        await asyncio.sleep(300)  # 5 minutos
 
 # ================================================================
-# 🚀 INICIALIZACIÓN DEL BOT
+# 🚀 INICIALIZACIÓN DEL BOT (Render-ready)
 # ================================================================
 
 async def main():
+    bot = Bot(token=BOT_TOKEN)
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -151,12 +139,15 @@ async def main():
     app.add_handler(CommandHandler("state", state))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Inicia keep_alive sin bloquear el loop principal
+    asyncio.create_task(keep_alive(bot))
+
     logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
-    await app.run_polling()
+    await app.run_polling(close_loop=False)
 
 
 if __name__ == "__main__":
-    bot = Bot(token=BOT_TOKEN)
-    loop = asyncio.get_event_loop()
-    loop.create_task(keep_alive(bot))  # mantiene vivos GameAPI y SRDService
-    loop.run_until_complete(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("🛑 S.A.M. detenido manualmente.")
