@@ -2,8 +2,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Optional
 from uuid import UUID
 from datetime import datetime
-from .base import Language
-
+from core.models.base import Language
 
 class SpellcastingData(BaseModel):
     """
