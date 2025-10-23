@@ -1,6 +1,6 @@
 from uuid import uuid4
-from .models.intent import Intent, IntentType
-from .models.base import ErrorModel
+from core.models.intent import Intent, IntentType
+from core.models.base import ErrorModel
 
 
 async def parse_intent(text: str, action_id):
