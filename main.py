@@ -4,6 +4,8 @@ import logging
 import httpx
 import json
 import random
+from datetime import datetime
+from uuid import uuid4
 from dotenv import load_dotenv
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -16,9 +18,14 @@ from telegram.ext import (
 )
 
 # ================================================================
+# 🧩 Núcleo narrativo (Fase 4.4)
+# ================================================================
+from core.orchestrator import run_pipeline
+from core.models.action import Action, SceneContext, PCStats
+
+# ================================================================
 # ⚙️ CONFIGURACIÓN INICIAL
 # ================================================================
-
 print("🧠 Booting S.A.M. background worker...", flush=True)
 load_dotenv()
 
@@ -30,11 +37,11 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 # ================================================================
 # 🧙 FUNCIONES BASE DEL DEMO "La Mina Olvidada"
 # ================================================================
-
 JSON_PATH = "adventures/demo_mine_v1.json"
 if os.path.exists(JSON_PATH):
     with open(JSON_PATH, "r", encoding="utf-8") as f:
@@ -51,6 +58,7 @@ def roll_d20():
     return total, roll, bonus
 
 async def send_scene(update: Update, context: ContextTypes.DEFAULT_TYPE, scene_id: str):
+    """Muestra una escena de la aventura demo."""
     if scene_id not in SCENES:
         await update.message.reply_text("❌ No se encontró la escena solicitada.")
         return
@@ -68,6 +76,7 @@ async def send_scene(update: Update, context: ContextTypes.DEFAULT_TYPE, scene_i
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=markup)
 
 async def handle_demo_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Resuelve las elecciones del demo."""
     query = update.callback_query
     await query.answer()
     scene_id = context.user_data.get("scene_id", "mine_entrance")
@@ -143,9 +152,65 @@ async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📜 Estado de la partida: pronto disponible.")
 
 # ================================================================
+# 🔮 HANDLER DE ACCIONES LIBRES (Fase 4.4)
+# ================================================================
+async def handle_free_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Interpreta acciones libres usando el pipeline de narrativa."""
+    user_text = update.message.text.strip()
+    if not user_text:
+        return
+
+    try:
+        logger.info(f"➡️ Acción libre recibida: {user_text}")
+
+        # ⚙️ Simula contexto mínimo (luego vendrá del gameapi)
+        pc_stats = {
+            "demo": PCStats(
+                abilities={"STR":10,"DEX":12,"CON":12,"INT":16,"WIS":10,"CHA":10},
+                proficiency_bonus=2,
+                skills=["Arcana","Perception"],
+                saving_throws=["INT"],
+                ac=13,
+                hp={"current":10,"max":10},
+                speed=30,
+                conditions=[],
+                spellcasting=None
+            )
+        }
+        scene_context = SceneContext(
+            scene_id=uuid4(),
+            location="Entrada de la mina",
+            party=[{"pc_id":"demo","name":"Valen"}],
+            pc_stats=pc_stats,
+            ruleset="SRD_5.2.1",
+            environment={"lighting":"dim","terrain":"mineshaft","hostiles_nearby":True}
+        )
+
+        action = Action(
+            action_id=uuid4(),
+            session_id=uuid4(),
+            player_id=uuid4(),
+            lang="es",
+            text=user_text,
+            timestamp=datetime.utcnow(),
+            scene_context=scene_context
+        )
+
+        # 🔮 Correr el pipeline narrativo
+        message = await run_pipeline(action)
+
+        for block in message.blocks:
+            await update.message.reply_text(block.text, parse_mode="MarkdownV2")
+
+        logger.info("✅ Acción libre procesada correctamente.")
+
+    except Exception as e:
+        logger.exception("❌ Error en handle_free_action")
+        await update.message.reply_text(f"⚠️ Error al procesar acción libre: {e}")
+
+# ================================================================
 # 🚀 MAIN LOOP (con delay para evitar 409)
 # ================================================================
-
 async def main_async():
     print("🚀 Lanzando S.A.M. Bot...", flush=True)
     if not BOT_TOKEN:
@@ -154,7 +219,7 @@ async def main_async():
 
     bot = Bot(token=BOT_TOKEN)
     try:
-        # 🧹 Limpieza del webhook
+        # 🧹 Limpieza del webhook previo
         await bot.delete_webhook(drop_pending_updates=True)
         logging.info("🧹 Webhook borrado antes del polling.")
         # 🕓 Espera para evitar conflicto con la instancia anterior
@@ -168,7 +233,9 @@ async def main_async():
     app.add_handler(CommandHandler("state", state))
     app.add_handler(CommandHandler("demo", lambda u, c: send_scene(u, c, "mine_entrance")))
     app.add_handler(CallbackQueryHandler(handle_demo_choice))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: u.message.reply_text("🧩 Acción registrada.")))
+
+    # 🧠 NUEVO: acciones libres → orquestador narrativo
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_action))
 
     await app.initialize()
     await app.start()
