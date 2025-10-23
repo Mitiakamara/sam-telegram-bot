@@ -18,6 +18,8 @@ from telegram.ext import (
 # ⚙️ CONFIGURACIÓN INICIAL
 # ================================================================
 
+print("🧠 Booting S.A.M. background worker...", flush=True)
+
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -172,4 +174,69 @@ async def keep_alive(bot: Bot):
         await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
         await asyncio.sleep(300)
 
-# ====================================================
+# ================================================================
+# 🚨 MANEJO GLOBAL DE ERRORES
+# ================================================================
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador global de errores para evitar que Render tumbe el bot."""
+    try:
+        raise context.error
+    except Conflict:
+        logging.warning("⚠️ Conflicto detectado: otra instancia del bot está corriendo.")
+    except Exception as e:
+        logging.error(f"❌ Error inesperado: {e}", exc_info=True)
+
+# ================================================================
+# 🚀 INICIALIZACIÓN Y EJECUCIÓN
+# ================================================================
+
+async def ensure_single_instance(bot: Bot):
+    """Desactiva cualquier webhook previo para evitar conflictos con getUpdates."""
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("🧹 Webhook anterior eliminado. Polling limpio garantizado.")
+    except Exception as e:
+        logging.warning(f"⚠️ No se pudo limpiar el webhook: {e}")
+
+async def post_init_tasks(app: Application):
+    """Callback post-inicialización: lanza tareas de mantenimiento."""
+    bot = app.bot
+    asyncio.create_task(keep_alive(bot))
+    logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
+
+async def main_async():
+    """Punto de entrada principal asíncrono del bot."""
+    print("🚀 Lanzando S.A.M. Bot...", flush=True)
+
+    if not BOT_TOKEN:
+        print("❌ TELEGRAM_BOT_TOKEN no configurado. Abortando.", flush=True)
+        return
+
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init_tasks).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("join", join))
+    app.add_handler(CommandHandler("state", state))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(error_handler)
+
+    await ensure_single_instance(app.bot)
+
+    logging.info("🚀 Iniciando Polling limpio (sin conflictos)...")
+    asyncio.create_task(app.run_polling())
+
+    # Mantiene el proceso vivo indefinidamente
+    logging.info("✅ S.A.M. está en ejecución permanente (modo Background Worker).")
+    await asyncio.Event().wait()
+
+def main():
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        logging.info("🛑 S.A.M. detenido manualmente.")
+    except Exception as e:
+        logging.error(f"❌ Error crítico al iniciar el bot: {e}", exc_info=True)
+
+if __name__ == "__main__":
+    main()
