@@ -5,7 +5,6 @@ import httpx
 import json
 from dotenv import load_dotenv
 from telegram import Update, Bot
-from telegram.error import Conflict
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -98,8 +97,7 @@ async def format_encounter_message(encounter_data: dict) -> str:
         hp = stats.get("hp", "N/A")
         ac = stats.get("ac", "N/A")
         attack = stats.get("attack", "N/A")
-        line = f"*{count}x {name}* (CR {cr}) — ❤️ {hp} | 🛡️ {ac} | ⚔️ {attack}"
-        enemy_lines.append(line)
+        enemy_lines.append(f"*{count}x {name}* (CR {cr}) — ❤️ {hp} | 🛡️ {ac} | ⚔️ {attack}")
 
     header = f"⚔️ *¡Encuentro de Combate!* (Dificultad: {difficulty.upper()})"
     xp_info = f"🪙 Experiencia total: {xp_total} XP"
@@ -192,15 +190,11 @@ async def keep_alive(bot: Bot):
         await asyncio.sleep(300)
 
 # ================================================================
-# 🚀 ARRANQUE PRINCIPAL (sin conflictos)
+# 🚀 ARRANQUE (MANEJO MANUAL DEL LOOP)
 # ================================================================
 
 async def main_async():
     print("🚀 Lanzando S.A.M. Bot...", flush=True)
-
-    if not BOT_TOKEN:
-        print("❌ TELEGRAM_BOT_TOKEN no configurado. Abortando.", flush=True)
-        return
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -212,16 +206,20 @@ async def main_async():
     logging.info("🧹 Webhook anterior eliminado. Polling limpio garantizado.")
 
     asyncio.create_task(keep_alive(app.bot))
-    await app.run_polling(close_loop=False)  # ✅ Único punto de polling
+    await app.initialize()
+    await app.start()
     logging.info("🤖 S.A.M. Bot iniciado correctamente. Escuchando mensajes...")
+    await app.run_polling()
 
 def main():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        asyncio.run(main_async())
+        loop.run_until_complete(main_async())
     except KeyboardInterrupt:
         logging.info("🛑 S.A.M. detenido manualmente.")
-    except Exception as e:
-        logging.error(f"❌ Error crítico al iniciar el bot: {e}", exc_info=True)
+    finally:
+        loop.close()
 
 if __name__ == "__main__":
     main()
