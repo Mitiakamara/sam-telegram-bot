@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 from uuid import UUID
-from .base import IntentType, CheckOutcome, ErrorModel
+from core.models.base import IntentType, CheckOutcome, ErrorModel
 
 
 class Step(BaseModel):
