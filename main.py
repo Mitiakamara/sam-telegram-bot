@@ -19,7 +19,6 @@ from telegram.ext import (
 # ================================================================
 
 print("🧠 Booting S.A.M. background worker...", flush=True)
-
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -116,7 +115,6 @@ async def format_narrative_message(data: dict, player: str) -> str:
     objective = story_state.get("objective", "Sin objetivo actual")
     events_completed = story_state.get("events_completed", 0)
 
-    # 🎭 Determina emoji por tipo de escena
     emoji = {
         "exploration": "🌲",
         "combat": "⚔️",
@@ -124,15 +122,13 @@ async def format_narrative_message(data: dict, player: str) -> str:
         "dialogue": "💬"
     }.get(scene, "✨")
 
-    formatted = (
+    return (
         f"{emoji} *{scene.title()} — {location}*\n\n"
         f"_{narrative}_\n\n"
         f"🎯 *Objetivo:* {objective}\n"
         f"📖 Eventos completados: {events_completed}\n\n"
         f"👉 ¿Qué harás ahora, {player}? "
     )
-
-    return formatted
 
 # ================================================================
 # 💬 MANEJO DE MENSAJES
@@ -158,18 +154,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ {result['error']}")
         return
 
-    # 🔍 Detección de tipo de respuesta
     if "encounter" in result:
         msg = await format_encounter_message(result["encounter"])
         await update.message.reply_text(msg, parse_mode="Markdown")
-
     elif "narrative" in result or "scene" in result:
         msg = await format_narrative_message(result, player)
         await update.message.reply_text(msg, parse_mode="Markdown")
-
     elif "echo" in result:
         await update.message.reply_text(f"💬 *Narrador:*\n_{result['echo']}_", parse_mode="Markdown")
-
     else:
         formatted = json.dumps(result, indent=2, ensure_ascii=False)
         await update.message.reply_text(
@@ -200,27 +192,8 @@ async def keep_alive(bot: Bot):
         await asyncio.sleep(300)
 
 # ================================================================
-# ⚠️ ERRORES GLOBALES
+# 🚀 ARRANQUE PRINCIPAL (sin conflictos)
 # ================================================================
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        raise context.error
-    except Conflict:
-        logging.warning("⚠️ Conflicto detectado: otra instancia del bot está corriendo.")
-    except Exception as e:
-        logging.error(f"❌ Error inesperado: {e}", exc_info=True)
-
-# ================================================================
-# 🚀 ARRANQUE MANUAL (SIN run_polling)
-# ================================================================
-
-async def ensure_single_instance(bot: Bot):
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        logging.info("🧹 Webhook anterior eliminado. Polling limpio garantizado.")
-    except Exception as e:
-        logging.warning(f"⚠️ No se pudo limpiar el webhook: {e}")
 
 async def main_async():
     print("🚀 Lanzando S.A.M. Bot...", flush=True)
@@ -234,18 +207,13 @@ async def main_async():
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("state", state))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_error_handler(error_handler)
 
-    await ensure_single_instance(app.bot)
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    logging.info("🧹 Webhook anterior eliminado. Polling limpio garantizado.")
 
-    # Inicialización manual sin usar run_polling()
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
     asyncio.create_task(keep_alive(app.bot))
-
+    await app.run_polling(close_loop=False)  # ✅ Único punto de polling
     logging.info("🤖 S.A.M. Bot iniciado correctamente. Escuchando mensajes...")
-    await asyncio.Event().wait()
 
 def main():
     try:
