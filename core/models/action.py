@@ -39,7 +39,7 @@ class SceneContext(BaseModel):
     party: List[Dict[str, str]]
     pc_stats: Dict[str, PCStats]
     ruleset: str
-    environment: Optional[Dict[str, str]] = None
+    environment: Optional[Dict[str, Optional[str | bool]]] = None
 
 
 class Action(BaseModel):
