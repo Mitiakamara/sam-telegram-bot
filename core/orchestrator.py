@@ -1,8 +1,8 @@
 import asyncio
-from .nlp_intent import parse_intent
-from .srd_client import lookup
-from .rules_engine import resolve
-from .renderer import render
+from core.nlp_intent import parse_intent
+from core.srd_client import lookup
+from core.rules_engine import resolve
+from core.renderer import render
 
 
 async def run_pipeline(action):
