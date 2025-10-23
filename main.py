@@ -32,17 +32,18 @@ logging.basicConfig(
 )
 
 # ================================================================
-# 🧠 FUNCIONES PRINCIPALES DEL BOT
+# 🧙‍♂️ COMANDOS PRINCIPALES
 # ================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🌟 Bienvenido a *S.A.M.*, tu Dungeon Master virtual.\n"
-        "Usa /join para unirte a la aventura o escribe directamente tus acciones.\n\n"
+        "🌟 *Bienvenido a S.A.M.*, tu Dungeon Master virtual.\n\n"
+        "Usa `/join` para unirte a la aventura o escribe directamente tus acciones.\n\n"
         "Por ejemplo:\n"
-        "👉 combat medium\n"
-        "👉 explore dungeon\n"
-        "👉 rest junto a la fogata",
+        "➡️ `combat medium`\n"
+        "➡️ `explore dungeon`\n"
+        "➡️ `rest junto a la fogata`\n\n"
+        "Prepárate para adentrarte en un mundo de fantasía...",
         parse_mode="Markdown"
     )
 
@@ -54,7 +55,7 @@ async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📜 Estado de la partida: pronto disponible.")
 
 # ================================================================
-# 🎲 MANEJO DE ACCIONES
+# ⚔️ GAME API HELPERS
 # ================================================================
 
 async def send_action(player: str, action: str) -> dict:
@@ -67,7 +68,6 @@ async def send_action(player: str, action: str) -> dict:
     except Exception as e:
         return {"error": f"No se pudo conectar al GameAPI: {e}"}
 
-
 async def start_game():
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -78,31 +78,65 @@ async def start_game():
     except Exception as e:
         return {"error": f"Error iniciando partida: {e}"}
 
+# ================================================================
+# 🎨 FORMATOS DE RESPUESTA
+# ================================================================
 
 async def format_encounter_message(encounter_data: dict) -> str:
     difficulty = encounter_data.get("difficulty", "desconocida")
     xp_total = encounter_data.get("xp_total", 0)
     monsters = encounter_data.get("monsters", [])
     monster_counts = {}
+
     for monster in monsters:
         name = monster.get("name", "Criatura Desconocida")
         monster_counts[name] = monster_counts.get(name, 0) + 1
 
-    enemy_list = []
+    enemy_lines = []
     for name, count in monster_counts.items():
         stats = next((m for m in monsters if m.get("name") == name), {})
         cr = stats.get("cr", "N/A")
         hp = stats.get("hp", "N/A")
         ac = stats.get("ac", "N/A")
         attack = stats.get("attack", "N/A")
-        line = f"*{count}x {name}* (CR {cr}): HP {hp}, AC {ac}, Ataque {attack}"
-        enemy_list.append(line)
+        line = f"*{count}x {name}* (CR {cr}) — ❤️ {hp} | 🛡️ {ac} | ⚔️ {attack}"
+        enemy_lines.append(line)
 
     header = f"⚔️ *¡Encuentro de Combate!* (Dificultad: {difficulty.upper()})"
     xp_info = f"🪙 Experiencia total: {xp_total} XP"
-    enemies_section = "👹 *Enemigos:*\n" + "\n".join(enemy_list)
-    return f"{header}\n\n{xp_info}\n\n{enemies_section}"
+    enemies = "\n".join(enemy_lines)
+    return f"{header}\n\n{xp_info}\n\n👹 *Enemigos:*\n{enemies}"
 
+async def format_narrative_message(data: dict, player: str) -> str:
+    scene = data.get("scene", "unknown")
+    narrative = data.get("narrative", "No se recibió narrativa.")
+    story_state = data.get("story_state", {})
+
+    location = story_state.get("location", "Ubicación desconocida")
+    objective = story_state.get("objective", "Sin objetivo actual")
+    events_completed = story_state.get("events_completed", 0)
+
+    # 🎭 Determina emoji por tipo de escena
+    emoji = {
+        "exploration": "🌲",
+        "combat": "⚔️",
+        "rest": "🔥",
+        "dialogue": "💬"
+    }.get(scene, "✨")
+
+    formatted = (
+        f"{emoji} *{scene.title()} — {location}*\n\n"
+        f"_{narrative}_\n\n"
+        f"🎯 *Objetivo:* {objective}\n"
+        f"📖 Eventos completados: {events_completed}\n\n"
+        f"👉 ¿Qué harás ahora, {player}? "
+    )
+
+    return formatted
+
+# ================================================================
+# 💬 MANEJO DE MENSAJES
+# ================================================================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = update.effective_user.first_name
@@ -124,9 +158,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ {result['error']}")
         return
 
+    # 🔍 Detección de tipo de respuesta
     if "encounter" in result:
-        message = await format_encounter_message(result["encounter"])
-        await update.message.reply_text(message, parse_mode="Markdown")
+        msg = await format_encounter_message(result["encounter"])
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    elif "narrative" in result or "scene" in result:
+        msg = await format_narrative_message(result, player)
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
     elif "echo" in result:
         await update.message.reply_text(f"💬 *Narrador:*\n_{result['echo']}_", parse_mode="Markdown")
@@ -134,11 +173,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         formatted = json.dumps(result, indent=2, ensure_ascii=False)
         await update.message.reply_text(
-            f"📜 *Resultado sin formato:*\n```json\n{formatted}\n```", parse_mode="Markdown"
+            f"📜 *Resultado sin formato:*\n```json\n{formatted}\n```",
+            parse_mode="Markdown"
         )
 
 # ================================================================
-# 🔄 KEEP-ALIVE
+# 🔄 KEEP ALIVE
 # ================================================================
 
 async def check_service_health(name: str, url: str):
@@ -152,7 +192,6 @@ async def check_service_health(name: str, url: str):
     except Exception as e:
         logging.error(f"❌ {name} inalcanzable: {e}")
 
-
 async def keep_alive(bot: Bot):
     logging.info("🔄 Iniciando verificación periódica de servicios...")
     while True:
@@ -161,7 +200,7 @@ async def keep_alive(bot: Bot):
         await asyncio.sleep(300)
 
 # ================================================================
-# 🚨 ERRORES GLOBALES
+# ⚠️ ERRORES GLOBALES
 # ================================================================
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -206,7 +245,6 @@ async def main_async():
     asyncio.create_task(keep_alive(app.bot))
 
     logging.info("🤖 S.A.M. Bot iniciado correctamente. Escuchando mensajes...")
-    # Mantiene vivo el worker
     await asyncio.Event().wait()
 
 def main():
