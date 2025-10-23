@@ -1,28 +1,27 @@
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 from uuid import UUID
-from .base import IntentType, CheckOutcome, ErrorModel
+from .base import Language
 
 
-class Step(BaseModel):
+class MessageBlock(BaseModel):
     """
-    Representa un paso en el proceso de resolución (check, ataque, daño, etc.).
+    Bloque individual de texto dentro de un mensaje Telegram.
+    Permite dividir narrativas largas y mostrar tiradas en línea.
     """
-    kind: str                      # check | attack | damage | save | resource_update | state_change | rules_note
-    desc: str                      # descripción narrativa o mecánica
-    result_total: Optional[int] = None
-    outcome: Optional[CheckOutcome] = None
-    notes: Optional[str] = None
+    text: str
+    rolls_inline: Optional[List[str]] = None
 
 
-class Resolution(BaseModel):
+class TelegramMessage(BaseModel):
     """
-    Resultado final del motor de reglas tras procesar un Intent.
+    Mensaje narrativo final, listo para enviar a Telegram.
+    Cumple con los límites de MarkdownV2 (1200 caracteres por bloque).
     """
-    resolution_id: UUID
+    message_id: UUID
     action_id: UUID
-    intent: IntentType
-    steps: List[Step]
-    outcome: CheckOutcome
-    dice_log: List[Dict]            # lista reproducible de tiradas
-    errors: Optional[List[ErrorModel]] = None
+    lang: Language
+    mode: str = "MarkdownV2"
+    safe_len: int = 1200
+    blocks: List[MessageBlock]
+    meta: Optional[Dict] = None
