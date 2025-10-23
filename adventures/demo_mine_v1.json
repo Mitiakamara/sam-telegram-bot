@@ -1,0 +1,100 @@
+{
+  "session_id": "demo_mine_v1",
+  "title": "La Mina Olvidada",
+  "description": "Una breve aventura de prueba diseñada para validar el flujo de juego de S.A.M. (Fase 4.3).",
+  "party": {
+    "name": "Héroes del Martillo Gris",
+    "members": [
+      {
+        "id": "wizard_01",
+        "name": "Elira",
+        "race": "Elfa Alta",
+        "class": "Hechicera (Wizard)",
+        "level": 2,
+        "hp": {"current": 12, "max": 12},
+        "xp": 300
+      },
+      {
+        "id": "fighter_01",
+        "name": "Borin",
+        "race": "Enano",
+        "class": "Guerrero (Fighter)",
+        "level": 2,
+        "hp": {"current": 18, "max": 18},
+        "xp": 300
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "scene_id": "mine_entrance",
+      "title": "Entrada de la mina",
+      "narration": "El viento sopla entre tablones podridos. Un eco metálico resuena desde el interior oscuro. La piedra huele a humedad y óxido. Borin levanta su escudo y te mira expectante.",
+      "options_text": [
+        "🔎 Investigar el ruido (Percepción DC 12)",
+        "💡 Lanzar el hechizo Light",
+        "⚔️ Entrar sin precaución"
+      ],
+      "options": [
+        {"id": "investigate_noise", "type": "skill_check", "skill": "Perception", "dc": 12, "success_scene": "mine_tunnel", "fail_scene": "goblin_ambush"},
+        {"id": "cast_light", "type": "spell", "spell_name": "Light", "success_scene": "mine_tunnel"},
+        {"id": "enter_boldly", "type": "action", "action_name": "Enter Without Caution", "success_scene": "goblin_ambush"}
+      ]
+    },
+    {
+      "scene_id": "mine_tunnel",
+      "title": "Túnel interior",
+      "narration": "La luz revela un túnel húmedo lleno de vagonetas oxidadas. El aire es denso y se escucha el goteo de agua sobre las piedras. Una sombra se mueve al fondo.",
+      "options_text": [
+        "👣 Buscar huellas o rastros (Investigación DC 13)",
+        "🪤 Preparar una defensa en caso de emboscada"
+      ],
+      "options": [
+        {"id": "search_tracks", "type": "skill_check", "skill": "Investigation", "dc": 13, "success_scene": "treasure_room", "fail_scene": "goblin_ambush"},
+        {"id": "set_trap", "type": "action", "action_name": "Prepare Defense", "success_scene": "goblin_ambush"}
+      ]
+    },
+    {
+      "scene_id": "goblin_ambush",
+      "title": "Emboscada goblin",
+      "narration": "¡Tres goblins emergen de entre las sombras con gritos agudos! Sus ojos reflejan la luz de tus antorchas. Uno apunta con un arco corto, otro blande una cimitarra mellada.",
+      "monsters": [
+        {"name": "Goblin Scout", "cr": 0.25, "hp": 7, "ac": 15, "actions": ["Scimitar", "Shortbow"]}
+      ],
+      "options_text": [
+        "⚔️ Atacar a los goblins",
+        "💤 Lanzar el hechizo Sleep",
+        "🏃 Intentar escapar sigilosamente (Sigilo DC 14)"
+      ],
+      "options": [
+        {"id": "attack_goblins", "type": "attack", "target": "all"},
+        {"id": "cast_sleep", "type": "spell", "spell_name": "Sleep", "target": "enemies"},
+        {"id": "retreat", "type": "skill_check", "skill": "Stealth", "dc": 14, "success_scene": "mine_tunnel", "fail_scene": "goblin_ambush"}
+      ]
+    },
+    {
+      "scene_id": "treasure_room",
+      "title": "Sala del tesoro",
+      "narration": "El pasillo desemboca en una vieja cámara. Entre los restos de una forja olvidada descansa un cofre con el emblema del Martillo Gris grabado en la tapa.",
+      "options_text": [
+        "🔐 Abrir el cofre (Investigación DC 10)",
+        "📜 Examinar el emblema (Historia DC 12)"
+      ],
+      "options": [
+        {"id": "open_chest", "type": "skill_check", "skill": "Investigation", "dc": 10, "success_scene": "end_success", "fail_scene": "end_fail"},
+        {"id": "inspect_emblem", "type": "skill_check", "skill": "History", "dc": 12, "success_scene": "end_success", "fail_scene": "end_fail"}
+      ]
+    },
+    {
+      "scene_id": "end_success",
+      "title": "Tesoro recuperado",
+      "narration": "Al abrir el cofre, una suave luz dorada ilumina la cámara. Dentro encuentras monedas antiguas, un anillo rúnico y una inscripción: *'A los héroes que devuelvan la luz al Martillo Gris'*.\n\n🎉 ¡Aventura completada!",
+      "rewards": {"xp_gain": 150, "loot": ["Anillo rúnico antiguo", "100 monedas de oro"]}
+    },
+    {
+      "scene_id": "end_fail",
+      "title": "La oscuridad reclama la mina",
+      "narration": "El ruido del metal cae en eco. Algo despierta bajo la tierra… una silueta monstruosa se mueve en la sombra.\n\n💀 La aventura termina aquí... por ahora."
+    }
+  ]
+}
