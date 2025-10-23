@@ -1,7 +1,7 @@
 from uuid import uuid4
 from random import randint
-from .models.resolution import Resolution, Step
-from .models.base import CheckOutcome, IntentType
+from core.models.resolution import Resolution, Step
+from core.models.base import CheckOutcome, IntentType
 
 
 async def resolve(intent, srd, ctx):
