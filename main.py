@@ -74,10 +74,10 @@ async def handle_demo_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     scene_id = context.user_data.get("scene_id", "mine_entrance")
-    scene = SCENES[scene_id]
+    scene = SCENES.get(scene_id, {})
     choice = int(query.data) - 1
-    opt = scene["options"][choice]
-    opt_type = opt["type"]
+    opt = scene.get("options", [])[choice] if scene else {}
+    opt_type = opt.get("type", "action")
     result_text = ""
     next_scene = None
 
@@ -89,7 +89,7 @@ async def handle_demo_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         success = total >= dc
         msg = f"🎲 {roll} + {bonus} = {total} vs DC {dc} → {'✅ Éxito' if success else '❌ Fallo'}"
         await query.message.reply_text(msg, parse_mode="Markdown")
-        next_scene = opt["success_scene"] if success else opt["fail_scene"]
+        next_scene = opt.get("success_scene") if success else opt.get("fail_scene")
 
     elif opt_type == "spell":
         spell = opt.get("spell_name", "hechizo")
@@ -110,6 +110,8 @@ async def handle_demo_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         result_text = "🤔 Actúas con decisión..."
         next_scene = opt.get("success_scene", "end_fail")
 
+    # Evita error “Message text is empty”
+    result_text = result_text or "..."
     await query.message.reply_text(result_text, parse_mode="Markdown")
 
     if next_scene and next_scene in SCENES:
@@ -145,7 +147,7 @@ async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📜 Estado de la partida: pronto disponible.")
 
 # ================================================================
-# ⚔️ GAME API HELPERS (sin cambios)
+# ⚔️ GAME API HELPERS
 # ================================================================
 
 async def send_action(player: str, action: str) -> dict:
@@ -169,7 +171,7 @@ async def start_game():
         return {"error": f"Error iniciando partida: {e}"}
 
 # ================================================================
-# 💬 MANEJO DE MENSAJES (sin cambios)
+# 💬 MANEJO DE MENSAJES
 # ================================================================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -196,7 +198,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ================================================================
-# 🔄 KEEP-ALIVE & SETUP
+# 🔄 KEEP-ALIVE Y CONTROL DE SERVICIOS
 # ================================================================
 
 async def check_service_health(name: str, url: str):
@@ -217,15 +219,8 @@ async def keep_alive(bot: Bot):
         await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
         await asyncio.sleep(300)
 
-async def ensure_single_instance(bot: Bot):
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-        logging.info("🧹 Webhook anterior eliminado. Polling limpio garantizado.")
-    except Exception as e:
-        logging.warning(f"⚠️ No se pudo limpiar el webhook: {e}")
-
 # ================================================================
-# 🚀 MAIN ASYNC LOOP
+# 🚀 MAIN LOOP (corregido y estable)
 # ================================================================
 
 async def main_async():
@@ -234,6 +229,15 @@ async def main_async():
         print("❌ TELEGRAM_BOT_TOKEN no configurado.", flush=True)
         return
 
+    # 🔹 Limpieza temprana del webhook (evita 409 Conflict)
+    bot = Bot(token=BOT_TOKEN)
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("🧹 Webhook borrado antes del polling.")
+    except Exception as e:
+        logging.warning(f"⚠️ No se pudo borrar webhook inicial: {e}")
+
+    # 🔹 Configuración normal
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
@@ -242,7 +246,6 @@ async def main_async():
     app.add_handler(CallbackQueryHandler(handle_demo_choice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    await ensure_single_instance(app.bot)
     await app.initialize()
     await app.start()
     asyncio.create_task(keep_alive(app.bot))
