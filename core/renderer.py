@@ -1,5 +1,5 @@
 from uuid import uuid4
-from .models.telegram_msg import TelegramMessage, MessageBlock
+from core.models.telegram_msg import TelegramMessage, MessageBlock
 
 
 def escape_markdown_v2(text: str) -> str:
