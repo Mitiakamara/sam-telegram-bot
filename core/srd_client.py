@@ -1,7 +1,7 @@
 import httpx
 from uuid import uuid4
 from aiocache import cached
-from .models.srd import SrdQuery, SrdResponse, SrdHit
+from core.models.srd import SrdQuery, SrdResponse, SrdHit
 
 SRD_SERVICE_URL = "https://sam-srdservice.onrender.com"
 
