@@ -205,6 +205,10 @@ async def post_init_tasks(app: Application):
     asyncio.create_task(keep_alive(bot))
     logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
 
+# ================================================================
+# 🧩 FUNCIÓN PRINCIPAL
+# ================================================================
+
 async def main_async():
     """Punto de entrada principal asíncrono del bot."""
     print("🚀 Lanzando S.A.M. Bot...", flush=True)
@@ -224,11 +228,10 @@ async def main_async():
     await ensure_single_instance(app.bot)
 
     logging.info("🚀 Iniciando Polling limpio (sin conflictos)...")
-    asyncio.create_task(app.run_polling())
 
-    # Mantiene el proceso vivo indefinidamente
+    # ✅ CORRECCIÓN: usar await directo y evitar cerrar el loop
     logging.info("✅ S.A.M. está en ejecución permanente (modo Background Worker).")
-    await asyncio.Event().wait()
+    await app.run_polling(close_loop=False)
 
 def main():
     try:
