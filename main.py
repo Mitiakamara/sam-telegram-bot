@@ -6,7 +6,6 @@ import json
 import random
 from dotenv import load_dotenv
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import Conflict
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -52,7 +51,6 @@ def roll_d20():
     return total, roll, bonus
 
 async def send_scene(update: Update, context: ContextTypes.DEFAULT_TYPE, scene_id: str):
-    """Muestra una escena del demo"""
     if scene_id not in SCENES:
         await update.message.reply_text("❌ No se encontró la escena solicitada.")
         return
@@ -70,7 +68,6 @@ async def send_scene(update: Update, context: ContextTypes.DEFAULT_TYPE, scene_i
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=markup)
 
 async def handle_demo_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gestiona las elecciones del jugador en el demo"""
     query = update.callback_query
     await query.answer()
     scene_id = context.user_data.get("scene_id", "mine_entrance")
@@ -110,7 +107,6 @@ async def handle_demo_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         result_text = "🤔 Actúas con decisión..."
         next_scene = opt.get("success_scene", "end_fail")
 
-    # Evita error “Message text is empty”
     result_text = result_text or "..."
     await query.message.reply_text(result_text, parse_mode="Markdown")
 
@@ -124,7 +120,7 @@ async def handle_demo_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.message.reply_text("🌑 Fin de la aventura demo.", parse_mode="Markdown")
 
 # ================================================================
-# 🧠 FUNCIONES PRINCIPALES DEL BOT (existentes)
+# 🧠 FUNCIONES PRINCIPALES DEL BOT
 # ================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -147,80 +143,7 @@ async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📜 Estado de la partida: pronto disponible.")
 
 # ================================================================
-# ⚔️ GAME API HELPERS
-# ================================================================
-
-async def send_action(player: str, action: str) -> dict:
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            payload = {"player": player, "action": action}
-            r = await client.post(f"{GAME_API_URL}/game/action", json=payload)
-            r.raise_for_status()
-            return r.json()
-    except Exception as e:
-        return {"error": f"No se pudo conectar al GameAPI: {e}"}
-
-async def start_game():
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            payload = {"party_levels": [3, 3, 4]}
-            r = await client.post(f"{GAME_API_URL}/game/start", json=payload)
-            r.raise_for_status()
-            return r.json()
-    except Exception as e:
-        return {"error": f"Error iniciando partida: {e}"}
-
-# ================================================================
-# 💬 MANEJO DE MENSAJES
-# ================================================================
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    player = update.effective_user.first_name
-    action = update.message.text.strip()
-    logging.info(f"[{player}] Acción recibida: {action}")
-    result = await send_action(player, action)
-
-    if "error" in result and "No hay partida" in result["error"]:
-        await update.message.reply_text("🧙 No hay partida activa. Iniciando una nueva...")
-        start_result = await start_game()
-        if "error" in start_result:
-            await update.message.reply_text(f"⚠️ Error al iniciar partida: {start_result['error']}")
-            return
-        else:
-            await update.message.reply_text("✅ Nueva partida iniciada. ¡Comienza la aventura!")
-            result = await send_action(player, action)
-
-    if "error" in result:
-        await update.message.reply_text(f"⚠️ {result['error']}")
-        return
-
-    msg = f"💬 *Narrador:*\n_{result.get('narrative', 'No se recibió narrativa.')}_"
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-# ================================================================
-# 🔄 KEEP-ALIVE Y CONTROL DE SERVICIOS
-# ================================================================
-
-async def check_service_health(name: str, url: str):
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(url)
-            if r.status_code == 200:
-                logging.info(f"✅ {name} activo ({url})")
-            else:
-                logging.warning(f"⚠️ {name} respondió con {r.status_code}")
-    except Exception as e:
-        logging.error(f"❌ {name} inalcanzable: {e}")
-
-async def keep_alive(bot: Bot):
-    logging.info("🔄 Verificación periódica de servicios iniciada...")
-    while True:
-        await check_service_health("GameAPI", f"{GAME_API_URL}/health")
-        await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
-        await asyncio.sleep(300)
-
-# ================================================================
-# 🚀 MAIN LOOP (corregido y estable)
+# 🚀 MAIN LOOP (con delay para evitar 409)
 # ================================================================
 
 async def main_async():
@@ -229,28 +152,27 @@ async def main_async():
         print("❌ TELEGRAM_BOT_TOKEN no configurado.", flush=True)
         return
 
-    # 🔹 Limpieza temprana del webhook (evita 409 Conflict)
     bot = Bot(token=BOT_TOKEN)
     try:
+        # 🧹 Limpieza del webhook
         await bot.delete_webhook(drop_pending_updates=True)
         logging.info("🧹 Webhook borrado antes del polling.")
+        # 🕓 Espera para evitar conflicto con la instancia anterior
+        await asyncio.sleep(10)
     except Exception as e:
         logging.warning(f"⚠️ No se pudo borrar webhook inicial: {e}")
 
-    # 🔹 Configuración normal
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("state", state))
     app.add_handler(CommandHandler("demo", lambda u, c: send_scene(u, c, "mine_entrance")))
     app.add_handler(CallbackQueryHandler(handle_demo_choice))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: u.message.reply_text("🧩 Acción registrada.")))
 
     await app.initialize()
     await app.start()
-    asyncio.create_task(keep_alive(app.bot))
     await app.updater.start_polling()
-
     logging.info("🤖 S.A.M. Bot iniciado correctamente. Escuchando mensajes...")
     await asyncio.Event().wait()
 
