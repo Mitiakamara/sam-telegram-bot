@@ -5,6 +5,7 @@ import httpx
 import json
 from dotenv import load_dotenv
 from telegram import Update, Bot
+from telegram.error import Conflict
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -30,7 +31,7 @@ logging.basicConfig(
 )
 
 # ================================================================
-# 🧙‍♂️ COMANDOS PRINCIPALES
+# 🧠 FUNCIONES PRINCIPALES DEL BOT
 # ================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -80,6 +81,30 @@ async def start_game():
 # 🎨 FORMATOS DE RESPUESTA
 # ================================================================
 
+async def format_narrative_message(data: dict, player: str) -> str:
+    scene = data.get("scene", "exploration")
+    narrative = data.get("narrative", "No se recibió narrativa.")
+    story_state = data.get("story_state", {})
+
+    emoji = {
+        "exploration": "🌲",
+        "combat": "⚔️",
+        "rest": "🔥",
+        "dialogue": "💬"
+    }.get(scene, "✨")
+
+    location = story_state.get("location", "Ubicación desconocida")
+    objective = story_state.get("objective", "Sin objetivo actual")
+    events_completed = story_state.get("events_completed", 0)
+
+    return (
+        f"{emoji} *{scene.title()} — {location}*\n\n"
+        f"_{narrative}_\n\n"
+        f"🎯 *Objetivo:* {objective}\n"
+        f"📖 Eventos completados: {events_completed}\n\n"
+        f"👉 ¿Qué harás ahora, {player}? "
+    )
+
 async def format_encounter_message(encounter_data: dict) -> str:
     difficulty = encounter_data.get("difficulty", "desconocida")
     xp_total = encounter_data.get("xp_total", 0)
@@ -90,43 +115,18 @@ async def format_encounter_message(encounter_data: dict) -> str:
         name = monster.get("name", "Criatura Desconocida")
         monster_counts[name] = monster_counts.get(name, 0) + 1
 
-    enemy_lines = []
+    lines = []
     for name, count in monster_counts.items():
         stats = next((m for m in monsters if m.get("name") == name), {})
         cr = stats.get("cr", "N/A")
         hp = stats.get("hp", "N/A")
         ac = stats.get("ac", "N/A")
         attack = stats.get("attack", "N/A")
-        enemy_lines.append(f"*{count}x {name}* (CR {cr}) — ❤️ {hp} | 🛡️ {ac} | ⚔️ {attack}")
+        lines.append(f"*{count}x {name}* (CR {cr}) — ❤️ {hp} | 🛡️ {ac} | ⚔️ {attack}")
 
     header = f"⚔️ *¡Encuentro de Combate!* (Dificultad: {difficulty.upper()})"
     xp_info = f"🪙 Experiencia total: {xp_total} XP"
-    enemies = "\n".join(enemy_lines)
-    return f"{header}\n\n{xp_info}\n\n👹 *Enemigos:*\n{enemies}"
-
-async def format_narrative_message(data: dict, player: str) -> str:
-    scene = data.get("scene", "unknown")
-    narrative = data.get("narrative", "No se recibió narrativa.")
-    story_state = data.get("story_state", {})
-
-    location = story_state.get("location", "Ubicación desconocida")
-    objective = story_state.get("objective", "Sin objetivo actual")
-    events_completed = story_state.get("events_completed", 0)
-
-    emoji = {
-        "exploration": "🌲",
-        "combat": "⚔️",
-        "rest": "🔥",
-        "dialogue": "💬"
-    }.get(scene, "✨")
-
-    return (
-        f"{emoji} *{scene.title()} — {location}*\n\n"
-        f"_{narrative}_\n\n"
-        f"🎯 *Objetivo:* {objective}\n"
-        f"📖 Eventos completados: {events_completed}\n\n"
-        f"👉 ¿Qué harás ahora, {player}? "
-    )
+    return f"{header}\n\n{xp_info}\n\n👹 *Enemigos:*\n" + "\n".join(lines)
 
 # ================================================================
 # 💬 MANEJO DE MENSAJES
@@ -154,21 +154,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if "encounter" in result:
         msg = await format_encounter_message(result["encounter"])
-        await update.message.reply_text(msg, parse_mode="Markdown")
     elif "narrative" in result or "scene" in result:
         msg = await format_narrative_message(result, player)
-        await update.message.reply_text(msg, parse_mode="Markdown")
     elif "echo" in result:
-        await update.message.reply_text(f"💬 *Narrador:*\n_{result['echo']}_", parse_mode="Markdown")
+        msg = f"💬 *Narrador:*\n_{result['echo']}_"
     else:
-        formatted = json.dumps(result, indent=2, ensure_ascii=False)
-        await update.message.reply_text(
-            f"📜 *Resultado sin formato:*\n```json\n{formatted}\n```",
-            parse_mode="Markdown"
-        )
+        msg = f"📜 *Resultado sin formato:*\n```json\n{json.dumps(result, indent=2, ensure_ascii=False)}\n```"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ================================================================
-# 🔄 KEEP ALIVE
+# 🔄 KEEP-ALIVE
 # ================================================================
 
 async def check_service_health(name: str, url: str):
@@ -190,36 +186,45 @@ async def keep_alive(bot: Bot):
         await asyncio.sleep(300)
 
 # ================================================================
-# 🚀 ARRANQUE (MANEJO MANUAL DEL LOOP)
+# 🚀 ARRANQUE ESTABLE (modo background)
 # ================================================================
+
+async def ensure_single_instance(bot: Bot):
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("🧹 Webhook anterior eliminado. Polling limpio garantizado.")
+    except Exception as e:
+        logging.warning(f"⚠️ No se pudo limpiar el webhook: {e}")
 
 async def main_async():
     print("🚀 Lanzando S.A.M. Bot...", flush=True)
+    if not BOT_TOKEN:
+        print("❌ TELEGRAM_BOT_TOKEN no configurado. Abortando.", flush=True)
+        return
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("state", state))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(lambda u, c: logging.error(f"❌ Error inesperado: {c.error}", exc_info=True))
 
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    logging.info("🧹 Webhook anterior eliminado. Polling limpio garantizado.")
-
-    asyncio.create_task(keep_alive(app.bot))
+    await ensure_single_instance(app.bot)
     await app.initialize()
     await app.start()
+    asyncio.create_task(keep_alive(app.bot))
+    await app.updater.start_polling()
+
     logging.info("🤖 S.A.M. Bot iniciado correctamente. Escuchando mensajes...")
-    await app.run_polling()
+    await asyncio.Event().wait()  # 🔥 Mantiene vivo el worker
 
 def main():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(main_async())
+        asyncio.run(main_async())
     except KeyboardInterrupt:
         logging.info("🛑 S.A.M. detenido manualmente.")
-    finally:
-        loop.close()
+    except Exception as e:
+        logging.error(f"❌ Error crítico al iniciar el bot: {e}", exc_info=True)
 
 if __name__ == "__main__":
     main()
