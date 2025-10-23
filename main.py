@@ -85,16 +85,17 @@ async def start_game():
 
 async def format_encounter_message(encounter_data: dict) -> str:
     """Formatea la respuesta de encuentro JSON en un mensaje legible."""
-    
     difficulty = encounter_data.get("difficulty", "desconocida")
     xp_total = encounter_data.get("xp_total", 0)
     monsters = encounter_data.get("monsters", [])
     
+    # Contar la ocurrencia de cada tipo de monstruo
     monster_counts = {}
     for monster in monsters:
         name = monster.get("name", "Criatura Desconocida")
         monster_counts[name] = monster_counts.get(name, 0) + 1
 
+    # Construir la lista de enemigos
     enemy_list = []
     for name, count in monster_counts.items():
         stats = next((m for m in monsters if m.get("name") == name), {})
@@ -108,7 +109,6 @@ async def format_encounter_message(encounter_data: dict) -> str:
     header = f"⚔️ *¡Encuentro de Combate!* (Dificultad: {difficulty.upper()})"
     xp_info = f"🪙 Experiencia total: {xp_total} XP"
     enemies_section = "👹 *Enemigos:*\n" + "\n".join(enemy_list)
-    
     return f"{header}\n\n{xp_info}\n\n{enemies_section}"
 
 
@@ -122,7 +122,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "error" in result and "No hay partida" in result["error"]:
         await update.message.reply_text("🧙 No hay partida activa. Iniciando una nueva...")
         start_result = await start_game()
-        
         if "error" in start_result:
             await update.message.reply_text(f"⚠️ Error al iniciar partida: {start_result['error']}")
             return
@@ -179,7 +178,6 @@ async def keep_alive(bot: Bot):
 # ================================================================
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manejador global de errores para evitar que Render tumbe el bot."""
     try:
         raise context.error
     except Conflict:
@@ -188,11 +186,11 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         logging.error(f"❌ Error inesperado: {e}", exc_info=True)
 
 # ================================================================
-# 🚀 INICIALIZACIÓN Y EJECUCIÓN
+# 🚀 INICIALIZACIÓN
 # ================================================================
 
 async def ensure_single_instance(bot: Bot):
-    """Desactiva cualquier webhook previo para evitar conflictos con getUpdates."""
+    """Desactiva cualquier webhook previo para evitar conflictos."""
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         logging.info("🧹 Webhook anterior eliminado. Polling limpio garantizado.")
@@ -200,13 +198,12 @@ async def ensure_single_instance(bot: Bot):
         logging.warning(f"⚠️ No se pudo limpiar el webhook: {e}")
 
 async def post_init_tasks(app: Application):
-    """Callback post-inicialización: lanza tareas de mantenimiento."""
     bot = app.bot
     asyncio.create_task(keep_alive(bot))
     logging.info("🤖 S.A.M. Bot iniciado y escuchando mensajes...")
 
 # ================================================================
-# 🧩 FUNCIÓN PRINCIPAL
+# 🧩 FUNCIÓN PRINCIPAL - COMPATIBLE CON PYTHON 3.13
 # ================================================================
 
 async def main_async():
@@ -218,7 +215,6 @@ async def main_async():
         return
 
     app = Application.builder().token(BOT_TOKEN).post_init(post_init_tasks).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("state", state))
@@ -228,18 +224,27 @@ async def main_async():
     await ensure_single_instance(app.bot)
 
     logging.info("🚀 Iniciando Polling limpio (sin conflictos)...")
-
-    # ✅ CORRECCIÓN: usar await directo y evitar cerrar el loop
     logging.info("✅ S.A.M. está en ejecución permanente (modo Background Worker).")
-    await app.run_polling(close_loop=False)
+
+    # ✅ Parche para Python 3.13 — usamos el loop manual
+    loop = asyncio.get_event_loop()
+    await loop.create_task(app.run_polling(close_loop=False))
 
 def main():
     try:
-        asyncio.run(main_async())
+        # ⚙️ Evita asyncio.run() para no duplicar loops (bug en Python 3.13)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(main_async())
     except KeyboardInterrupt:
         logging.info("🛑 S.A.M. detenido manualmente.")
     except Exception as e:
         logging.error(f"❌ Error crítico al iniciar el bot: {e}", exc_info=True)
+    finally:
+        try:
+            loop.close()
+        except RuntimeError:
+            logging.warning("⚠️ Intento de cerrar loop mientras sigue activo (ignorado).")
 
 if __name__ == "__main__":
     main()
