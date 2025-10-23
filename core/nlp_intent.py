@@ -1,68 +1,82 @@
+import re
+import unicodedata
 from uuid import uuid4
 from core.models.intent import Intent, IntentType
 from core.models.base import ErrorModel
 
 
+def normalize_text(text: str) -> str:
+    """Normaliza texto eliminando tildes, puntuación y dejando minúsculas."""
+    text = text.lower()
+    text = "".join(
+        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
+    )
+    text = re.sub(r"[^\w\s]", "", text)
+    return text.strip()
+
+
 async def parse_intent(text: str, action_id):
     """
-    Analiza el texto del jugador para determinar la intención (Intent).
-    Es un NLP ligero basado en reglas, sin dependencias externas.
+    Analiza el texto del jugador y determina el intent principal.
+    Incluye variantes con tildes y sinónimos comunes.
     """
     try:
-        lower = text.lower().strip()
+        lower = normalize_text(text)
 
-        # --- Clasificación básica ---
-        if any(word in lower for word in ["lanzo", "conjuro", "invoco", "hechizo"]):
+        # --- Hechizos / Conjuros ---
+        if any(word in lower for word in ["lanzo", "lanzar", "conjuro", "invoco", "hechizo", "magia", "conjurar"]):
             intent = IntentType.cast_spell
             requires_srd = True
 
-        elif any(word in lower for word in ["investigo", "busco", "examino", "observo", "reviso"]):
+        # --- Investigación / Percepción ---
+        elif any(word in lower for word in ["investigo", "examino", "busco", "reviso", "observo", "miro", "analizo"]):
             intent = IntentType.investigate
             requires_srd = False
 
-        elif any(word in lower for word in ["hablo", "digo", "pregunto", "saludo", "charlo"]):
+        # --- Interacción social ---
+        elif any(word in lower for word in ["hablo", "digo", "pregunto", "saludo", "charlo", "converso", "grito"]):
             intent = IntentType.talk
             requires_srd = False
 
-        elif any(word in lower for word in ["golpeo", "ataco", "disparo", "apunto", "arremeto"]):
+        # --- Ataques / Combate ---
+        elif any(word in lower for word in ["ataco", "golpeo", "disparo", "arremeto", "pego", "apuñalo", "blando"]):
             intent = IntentType.attack
             requires_srd = True
 
-        elif any(word in lower for word in ["camino", "avanzo", "corro", "me muevo", "retrocedo"]):
+        # --- Movimiento ---
+        elif any(word in lower for word in ["camino", "avanzo", "corro", "muevo", "retrocedo", "me acerco"]):
             intent = IntentType.move
             requires_srd = False
 
-        elif any(word in lower for word in ["uso", "tomo", "activo", "abro", "cierro", "manipulo"]):
+        # --- Interacción / Uso ---
+        elif any(word in lower for word in ["uso", "tomo", "abro", "cierro", "activo", "agarro", "manipulo"]):
             intent = IntentType.interact
             requires_srd = False
 
+        # --- Fallback ---
         else:
-            # fallback genérico
             intent = IntentType.interact
             requires_srd = False
 
-        # --- Extracción de entidades simples ---
+        # --- Extracción de entidades básicas ---
         entities = {}
-
-        # Detectar nombre de hechizo básico (ejemplo: "lanzo dormir")
+        # Hechizos conocidos (Sleep / Dormir / Luz / Light)
         if intent == IntentType.cast_spell:
-            palabras = lower.split()
-            for palabra in palabras:
-                if palabra.capitalize() in ["Sleep", "Dormir", "Escudo", "Shield", "Luz", "Luz"]:
-                    entities["spell_name"] = palabra.capitalize()
-                    break
-
-        # Detectar tipo de habilidad o interacción
-        if intent == IntentType.investigate and "puerta" in lower:
-            entities["target"] = "puerta"
+            if "dormir" in lower or "sleep" in lower:
+                entities["spell_name"] = "Sleep"
+            elif "luz" in lower or "light" in lower:
+                entities["spell_name"] = "Light"
 
         if intent == IntentType.attack and "arco" in lower:
             entities["attack_weapon"] = "arco"
 
+        if intent == IntentType.investigate and "puerta" in lower:
+            entities["target"] = "puerta"
+
         return Intent(
             action_id=action_id,
             intent=intent,
-            confidence=0.85,
+            confidence=0.9,
             requires_srd=requires_srd,
             entities=entities,
         )
