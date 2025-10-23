@@ -1,0 +1,6 @@
+services:
+  - type: worker
+    name: sam-telegram-bot
+    env: python
+    pythonVersion: 3.11.9
+    startCommand: python -u main.py
