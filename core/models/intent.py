@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from uuid import UUID
-from .base import IntentType, ErrorModel
+from core.models.base import IntentType, ErrorModel
 
 
 class Intent(BaseModel):
