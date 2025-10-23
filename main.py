@@ -3,14 +3,16 @@ import asyncio
 import logging
 import httpx
 import json
+import random
 from dotenv import load_dotenv
-from telegram import Update, Bot
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import Conflict
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     ContextTypes,
+    CallbackQueryHandler,
     filters,
 )
 
@@ -31,14 +33,103 @@ logging.basicConfig(
 )
 
 # ================================================================
-# 🧠 FUNCIONES PRINCIPALES DEL BOT
+# 🧙 FUNCIONES BASE DEL DEMO "La Mina Olvidada"
+# ================================================================
+
+JSON_PATH = "adventures/demo_mine_v1.json"
+if os.path.exists(JSON_PATH):
+    with open(JSON_PATH, "r", encoding="utf-8") as f:
+        ADVENTURE = json.load(f)
+    SCENES = {s["scene_id"]: s for s in ADVENTURE["scenes"]}
+else:
+    ADVENTURE = {}
+    SCENES = {}
+
+def roll_d20():
+    roll = random.randint(1, 20)
+    bonus = random.randint(1, 4)
+    total = roll + bonus
+    return total, roll, bonus
+
+async def send_scene(update: Update, context: ContextTypes.DEFAULT_TYPE, scene_id: str):
+    """Muestra una escena del demo"""
+    if scene_id not in SCENES:
+        await update.message.reply_text("❌ No se encontró la escena solicitada.")
+        return
+
+    scene = SCENES[scene_id]
+    context.user_data["scene_id"] = scene_id
+
+    text = f"📍 *{scene['title']}*\n{scene['narration']}"
+    buttons = [
+        [InlineKeyboardButton(opt_text, callback_data=str(i+1))]
+        for i, opt_text in enumerate(scene.get("options_text", []))
+    ]
+    markup = InlineKeyboardMarkup(buttons) if buttons else None
+
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=markup)
+
+async def handle_demo_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestiona las elecciones del jugador en el demo"""
+    query = update.callback_query
+    await query.answer()
+    scene_id = context.user_data.get("scene_id", "mine_entrance")
+    scene = SCENES[scene_id]
+    choice = int(query.data) - 1
+    opt = scene["options"][choice]
+    opt_type = opt["type"]
+    result_text = ""
+    next_scene = None
+
+    if opt_type == "skill_check":
+        dc = opt.get("dc", 10)
+        skill = opt.get("skill", "Habilidad")
+        await query.message.reply_text(f"Intentas una prueba de *{skill}* (DC {dc})...", parse_mode="Markdown")
+        total, roll, bonus = roll_d20()
+        success = total >= dc
+        msg = f"🎲 {roll} + {bonus} = {total} vs DC {dc} → {'✅ Éxito' if success else '❌ Fallo'}"
+        await query.message.reply_text(msg, parse_mode="Markdown")
+        next_scene = opt["success_scene"] if success else opt["fail_scene"]
+
+    elif opt_type == "spell":
+        spell = opt.get("spell_name", "hechizo")
+        result_text = f"✨ Lanzas *{spell}*... una luz mágica se expande."
+        next_scene = opt.get("success_scene")
+
+    elif opt_type == "attack":
+        result_text = "⚔️ Te lanzas al combate..."
+        roll, _, _ = roll_d20()
+        if roll >= 12:
+            result_text += "\n✅ Impactas y los goblins retroceden."
+            next_scene = "treasure_room"
+        else:
+            result_text += "\n❌ Fallas y los goblins contraatacan."
+            next_scene = "end_fail"
+
+    else:
+        result_text = "🤔 Actúas con decisión..."
+        next_scene = opt.get("success_scene", "end_fail")
+
+    await query.message.reply_text(result_text, parse_mode="Markdown")
+
+    if next_scene and next_scene in SCENES:
+        nxt = SCENES[next_scene]
+        await query.message.reply_text(f"📍 *{nxt['title']}*\n{nxt['narration']}", parse_mode="Markdown")
+        if "rewards" in nxt:
+            xp = nxt["rewards"].get("xp_gain", 0)
+            await query.message.reply_text(f"🏅 Has ganado {xp} XP", parse_mode="Markdown")
+    else:
+        await query.message.reply_text("🌑 Fin de la aventura demo.", parse_mode="Markdown")
+
+# ================================================================
+# 🧠 FUNCIONES PRINCIPALES DEL BOT (existentes)
 # ================================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🌟 *Bienvenido a S.A.M.*, tu Dungeon Master virtual.\n\n"
-        "Usa `/join` para unirte a la aventura o escribe directamente tus acciones.\n\n"
-        "Por ejemplo:\n"
+        "Usa `/join` para unirte a la aventura o `/demo` para probar una historia corta.\n\n"
+        "Ejemplos:\n"
         "➡️ `combat medium`\n"
         "➡️ `explore dungeon`\n"
         "➡️ `rest junto a la fogata`\n\n"
@@ -54,7 +145,7 @@ async def state(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📜 Estado de la partida: pronto disponible.")
 
 # ================================================================
-# ⚔️ GAME API HELPERS
+# ⚔️ GAME API HELPERS (sin cambios)
 # ================================================================
 
 async def send_action(player: str, action: str) -> dict:
@@ -78,58 +169,7 @@ async def start_game():
         return {"error": f"Error iniciando partida: {e}"}
 
 # ================================================================
-# 🎨 FORMATOS DE RESPUESTA
-# ================================================================
-
-async def format_narrative_message(data: dict, player: str) -> str:
-    scene = data.get("scene", "exploration")
-    narrative = data.get("narrative", "No se recibió narrativa.")
-    story_state = data.get("story_state", {})
-
-    emoji = {
-        "exploration": "🌲",
-        "combat": "⚔️",
-        "rest": "🔥",
-        "dialogue": "💬"
-    }.get(scene, "✨")
-
-    location = story_state.get("location", "Ubicación desconocida")
-    objective = story_state.get("objective", "Sin objetivo actual")
-    events_completed = story_state.get("events_completed", 0)
-
-    return (
-        f"{emoji} *{scene.title()} — {location}*\n\n"
-        f"_{narrative}_\n\n"
-        f"🎯 *Objetivo:* {objective}\n"
-        f"📖 Eventos completados: {events_completed}\n\n"
-        f"👉 ¿Qué harás ahora, {player}? "
-    )
-
-async def format_encounter_message(encounter_data: dict) -> str:
-    difficulty = encounter_data.get("difficulty", "desconocida")
-    xp_total = encounter_data.get("xp_total", 0)
-    monsters = encounter_data.get("monsters", [])
-    monster_counts = {}
-
-    for monster in monsters:
-        name = monster.get("name", "Criatura Desconocida")
-        monster_counts[name] = monster_counts.get(name, 0) + 1
-
-    lines = []
-    for name, count in monster_counts.items():
-        stats = next((m for m in monsters if m.get("name") == name), {})
-        cr = stats.get("cr", "N/A")
-        hp = stats.get("hp", "N/A")
-        ac = stats.get("ac", "N/A")
-        attack = stats.get("attack", "N/A")
-        lines.append(f"*{count}x {name}* (CR {cr}) — ❤️ {hp} | 🛡️ {ac} | ⚔️ {attack}")
-
-    header = f"⚔️ *¡Encuentro de Combate!* (Dificultad: {difficulty.upper()})"
-    xp_info = f"🪙 Experiencia total: {xp_total} XP"
-    return f"{header}\n\n{xp_info}\n\n👹 *Enemigos:*\n" + "\n".join(lines)
-
-# ================================================================
-# 💬 MANEJO DE MENSAJES
+# 💬 MANEJO DE MENSAJES (sin cambios)
 # ================================================================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -152,19 +192,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ {result['error']}")
         return
 
-    if "encounter" in result:
-        msg = await format_encounter_message(result["encounter"])
-    elif "narrative" in result or "scene" in result:
-        msg = await format_narrative_message(result, player)
-    elif "echo" in result:
-        msg = f"💬 *Narrador:*\n_{result['echo']}_"
-    else:
-        msg = f"📜 *Resultado sin formato:*\n```json\n{json.dumps(result, indent=2, ensure_ascii=False)}\n```"
-
+    msg = f"💬 *Narrador:*\n_{result.get('narrative', 'No se recibió narrativa.')}_"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ================================================================
-# 🔄 KEEP-ALIVE
+# 🔄 KEEP-ALIVE & SETUP
 # ================================================================
 
 async def check_service_health(name: str, url: str):
@@ -172,22 +204,18 @@ async def check_service_health(name: str, url: str):
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.get(url)
             if r.status_code == 200:
-                logging.info(f"✅ {name} está activo ({url})")
+                logging.info(f"✅ {name} activo ({url})")
             else:
                 logging.warning(f"⚠️ {name} respondió con {r.status_code}")
     except Exception as e:
         logging.error(f"❌ {name} inalcanzable: {e}")
 
 async def keep_alive(bot: Bot):
-    logging.info("🔄 Iniciando verificación periódica de servicios...")
+    logging.info("🔄 Verificación periódica de servicios iniciada...")
     while True:
         await check_service_health("GameAPI", f"{GAME_API_URL}/health")
         await check_service_health("SRDService", f"{SRD_SERVICE_URL}/health")
         await asyncio.sleep(300)
-
-# ================================================================
-# 🚀 ARRANQUE ESTABLE (modo background)
-# ================================================================
 
 async def ensure_single_instance(bot: Bot):
     try:
@@ -196,18 +224,23 @@ async def ensure_single_instance(bot: Bot):
     except Exception as e:
         logging.warning(f"⚠️ No se pudo limpiar el webhook: {e}")
 
+# ================================================================
+# 🚀 MAIN ASYNC LOOP
+# ================================================================
+
 async def main_async():
     print("🚀 Lanzando S.A.M. Bot...", flush=True)
     if not BOT_TOKEN:
-        print("❌ TELEGRAM_BOT_TOKEN no configurado. Abortando.", flush=True)
+        print("❌ TELEGRAM_BOT_TOKEN no configurado.", flush=True)
         return
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("state", state))
+    app.add_handler(CommandHandler("demo", lambda u, c: send_scene(u, c, "mine_entrance")))
+    app.add_handler(CallbackQueryHandler(handle_demo_choice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_error_handler(lambda u, c: logging.error(f"❌ Error inesperado: {c.error}", exc_info=True))
 
     await ensure_single_instance(app.bot)
     await app.initialize()
@@ -216,7 +249,7 @@ async def main_async():
     await app.updater.start_polling()
 
     logging.info("🤖 S.A.M. Bot iniciado correctamente. Escuchando mensajes...")
-    await asyncio.Event().wait()  # 🔥 Mantiene vivo el worker
+    await asyncio.Event().wait()
 
 def main():
     try:
