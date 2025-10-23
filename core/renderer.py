@@ -1,12 +1,10 @@
+import random
 from uuid import uuid4
 from core.models.telegram_msg import TelegramMessage, MessageBlock
 
 
 def escape_markdown_v2(text: str) -> str:
-    """
-    Escapa caracteres especiales de MarkdownV2.
-    (Evita errores de formato en Telegram)
-    """
+    """Escapa caracteres especiales de MarkdownV2."""
     if not text:
         return text
     escape_chars = "_*[]()~`>#+-=|{}.!"
@@ -17,61 +15,80 @@ def escape_markdown_v2(text: str) -> str:
 
 def render(resolution, intent, action):
     """
-    Genera el mensaje final Telegram-ready (MarkdownV2).
-    Combina acción, resolución y resultados de tiradas.
+    Genera el mensaje final Telegram-ready con narrativa dinámica.
     """
     pc_name = action.scene_context.party[0]["name"]
     intent_type = str(intent.intent)
+    outcome = str(resolution.outcome)
 
-    # --- Plantillas básicas según intent ---
-    if intent_type == "cast_spell":
-        spell_name = intent.entities.get("spell_name", "hechizo")
-        roll_sum = None
-        for s in resolution.steps:
-            if s.result_total:
-                roll_sum = s.result_total
-                break
-        text = (
-            f"*{pc_name}* pronuncia un encantamiento y lanza *{spell_name}*.\n"
-            f"✨ Una onda mágica se expande por la zona.\n"
-        )
-        if roll_sum:
-            text += f"_Energía total:_ `{roll_sum}`"
-        rolls_inline = [f"{r['expr']} → {r['total']}" for r in resolution.dice_log]
+    # 🎭 Plantillas de frases según tipo de acción
+    phrases = {
+        "cast_spell": [
+            f"*{pc_name}* murmura palabras arcanas y libera un destello de energía mágica.",
+            f"✨ *{pc_name}* concentra su poder interior y lanza un hechizo brillante.",
+            f"*{pc_name}* alza la mano y el aire vibra con energía arcana.",
+        ],
+        "attack": [
+            f"⚔️ *{pc_name}* ataca con determinación.",
+            f"💥 *{pc_name}* se lanza al combate, decidido a golpear.",
+            f"*{pc_name}* blande su arma con fuerza y precisión.",
+        ],
+        "investigate": [
+            f"🔍 *{pc_name}* examina con atención cada detalle del entorno.",
+            f"👁️ *{pc_name}* observa cuidadosamente buscando pistas ocultas.",
+            f"*{pc_name}* recorre el lugar con la mirada, en busca de algo inusual.",
+        ],
+        "talk": [
+            f"💬 *{pc_name}* inicia una conversación con un tono curioso.",
+            f"*{pc_name}* se dirige con calma al interlocutor, buscando respuestas.",
+            f"🗣️ *{pc_name}* habla con voz firme, intentando obtener información.",
+        ],
+        "move": [
+            f"🚶 *{pc_name}* avanza con pasos cautelosos.",
+            f"🏃 *{pc_name}* se mueve rápidamente por el terreno.",
+            f"*{pc_name}* cambia de posición evaluando el entorno.",
+        ],
+        "interact": [
+            f"✋ *{pc_name}* actúa con decisión.",
+            f"🧩 *{pc_name}* interactúa con su entorno de forma instintiva.",
+            f"*{pc_name}* realiza una acción rápida e improvisada.",
+        ],
+    }
 
-    elif intent_type == "skill_check":
-        total = resolution.dice_log[0]["total"] if resolution.dice_log else "—"
-        text = f"*{pc_name}* intenta una acción cuidadosa.\n🎲 Resultado: `{total}`"
-        rolls_inline = [f"{r['expr']} → {r['total']}" for r in resolution.dice_log]
+    # 🧠 Frases según resultado
+    outcomes = {
+        "success": [
+            "✅ El resultado es favorable.",
+            "🌟 ¡Éxito rotundo!",
+            "👏 Todo sale como esperaba.",
+        ],
+        "failure": [
+            "❌ El intento falla por poco.",
+            "💀 Algo sale mal en el último momento.",
+            "😓 No logra lo que pretendía.",
+        ],
+        "mixed": [
+            "⚖️ Logra parte de su objetivo, pero con consecuencias.",
+            "🤔 No está claro si fue buena idea.",
+            "💫 El resultado es incierto.",
+        ],
+    }
 
-    elif intent_type == "talk":
-        text = f"*{pc_name}* entabla conversación con un NPC.\n"
-        text += "_La charla fluye con naturalidad._"
-        rolls_inline = []
+    # Selecciona frases aleatorias
+    base_text = random.choice(phrases.get(intent_type, phrases["interact"]))
+    outcome_text = random.choice(outcomes.get(outcome, [""]))
 
-    elif intent_type == "investigate":
-        text = f"*{pc_name}* examina el entorno con atención.\n"
-        text += "👁️ Encuentra rastros sutiles en la piedra."
-        rolls_inline = []
+    # 🧾 Tiradas
+    rolls_inline = [f"{r['expr']} → {r['total']}" for r in resolution.dice_log] if resolution.dice_log else []
 
-    elif intent_type == "attack":
-        text = f"⚔️ *{pc_name}* ataca con determinación.\n"
-        if resolution.outcome == "success":
-            text += "✅ El golpe impacta de lleno."
-        elif resolution.outcome == "failure":
-            text += "❌ El ataque falla por poco."
-        else:
-            text += "⚖️ El resultado es incierto."
-        rolls_inline = [f"{r['expr']} → {r['total']}" for r in resolution.dice_log]
+    # Arma el texto final
+    text = f"{base_text}\n{outcome_text}"
+    if rolls_inline:
+        rolls_summary = "🎲 " + ", ".join(rolls_inline)
+        text += f"\n{rolls_summary}"
 
-    else:
-        text = f"*{pc_name}* actúa instintivamente."
-        rolls_inline = []
-
-    # --- Escapar MarkdownV2 ---
+    # Escapa Markdown y crea bloque Telegram
     safe_text = escape_markdown_v2(text)
-
-    # --- Crear mensaje Telegram-ready ---
     msg = TelegramMessage(
         message_id=uuid4(),
         action_id=action.action_id,
