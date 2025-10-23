@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 from uuid import UUID
-from .base import ErrorModel
+from core.models.base import ErrorModel
 
 
 class SrdQuery(BaseModel):
