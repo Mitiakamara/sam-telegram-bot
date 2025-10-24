@@ -26,7 +26,12 @@ from core.models.action import Action, SceneContext, PCStats
 # ================================================================
 # 🌐 Persistencia y SceneManager (Fase 5.0 – 5.3)
 # ================================================================
-from core.handlers import scene_commands, action_commands, session_commands
+from core.handlers import (
+    scene_commands,
+    action_commands,
+    session_commands,
+    delete_session_commands,
+)
 from core.utils.logger import get_logger
 
 # ================================================================
@@ -141,13 +146,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🌟 *Bienvenido a S.A.M.*, tu Dungeon Master virtual.\n\n"
         "Usa `/join` para unirte a la aventura o `/demo` para probar una historia corta.\n\n"
-        "🔹 Nuevos comandos de persistencia:\n"
+        "🔹 Comandos disponibles:\n"
         "`/scene <id>` – muestra una escena\n"
         "`/action <session_id> <acción>` – ejecuta acciones SRD\n"
         "`/save <session_id>` – guarda progreso\n"
         "`/load <session_id>` – carga partida\n"
         "`/newsession <campaign_id> <party_id>` – crea una nueva sesión\n"
-        "`/sessions` – lista todas las sesiones guardadas\n\n"
+        "`/sessions` – lista todas las sesiones guardadas\n"
+        "`/deletesession <id|all>` – elimina una o todas las sesiones guardadas\n\n"
         "Prepárate para adentrarte en un mundo de fantasía...",
         parse_mode="Markdown"
     )
@@ -247,18 +253,15 @@ async def main_async():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_action))
 
     # ------------------------------------------------------------
-    # NUEVOS HANDLERS DE PERSISTENCIA Y ESCENAS (Fase 5.0–5.2)
+    # NUEVOS HANDLERS DE PERSISTENCIA Y ESCENAS (Fase 5.0–5.3)
     # ------------------------------------------------------------
     app.add_handler(CommandHandler("save", scene_commands.save_command))
     app.add_handler(CommandHandler("load", scene_commands.load_command))
     app.add_handler(CommandHandler("scene", scene_commands.scene_command))
     app.add_handler(CommandHandler("action", action_commands.action_command))
-
-    # ------------------------------------------------------------
-    # NUEVOS HANDLERS DE SESIONES (Fase 5.3)
-    # ------------------------------------------------------------
     app.add_handler(CommandHandler("newsession", session_commands.new_session_command))
     app.add_handler(CommandHandler("sessions", session_commands.list_sessions_command))
+    app.add_handler(CommandHandler("deletesession", delete_session_commands.delete_session_command))
 
     # ------------------------------------------------------------
     # INICIO DE LA APP
