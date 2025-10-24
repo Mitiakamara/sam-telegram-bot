@@ -16,6 +16,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GAME_API_URL = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com")
+ADMIN_IDS = os.getenv("BOT_ADMINS", "")  # Lista separada por comas de IDs permitidos
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("SAM.Bot")
@@ -27,8 +28,14 @@ narrator = SAMNarrator()
 party_events = PartyEventSystem(narrator=narrator)
 
 # ================================================================
-# 🧩 FUNCIONES AUXILIARES PARA CONECTAR CON LA API
+# 🧩 FUNCIONES AUXILIARES
 # ================================================================
+def is_admin(user_id: int) -> bool:
+    if not ADMIN_IDS:
+        return False
+    allowed = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip().isdigit()]
+    return user_id in allowed
+
 async def api_request(method: str, endpoint: str, json_data: dict | None = None):
     """Hace peticiones a la Game API y devuelve JSON o None."""
     url = f"{GAME_API_URL}{endpoint}"
@@ -38,6 +45,8 @@ async def api_request(method: str, endpoint: str, json_data: dict | None = None)
                 response = await client.get(url)
             elif method == "POST":
                 response = await client.post(url, json=json_data)
+            elif method == "DELETE":
+                response = await client.delete(url)
             else:
                 raise ValueError("Método HTTP no soportado.")
             response.raise_for_status()
@@ -50,7 +59,7 @@ async def api_request(method: str, endpoint: str, json_data: dict | None = None)
             return None
 
 # ================================================================
-# 🧙‍♀️ COMANDOS DE PARTY
+# 🎲 COMANDOS DE PARTY
 # ================================================================
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player_name = update.effective_user.first_name
@@ -59,11 +68,9 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ No se pudo unir a {player_name}.")
         return
 
-    # Obtener tamaño actual del grupo
     party_data = await api_request("GET", "/party")
     party_size = len(party_data.get("party", [])) if party_data else 1
 
-    # Narrar
     msg = party_events.on_player_join(party_size, player_name)
     await update.message.reply_text(msg or f"{player_name} se unió al grupo.")
 
@@ -107,14 +114,33 @@ async def list_party(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"👥 *Grupo actual:*\n{members}", parse_mode="Markdown")
 
 # ================================================================
+# 🧹 COMANDO ADMIN: RESETEAR PARTY
+# ================================================================
+async def reset_party(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("🚫 No tienes permiso para usar este comando.")
+        return
+
+    # Simulamos un "reset" borrando el archivo party.json desde la API
+    result = await api_request("POST", "/party/reset", {})
+    if result:
+        await update.message.reply_text("🧹 El grupo ha sido limpiado. ¡S.A.M. espera nuevos aventureros!")
+    else:
+        await update.message.reply_text("⚠️ No se pudo limpiar el grupo.")
+
+# ================================================================
 # 🚀 INICIO DEL BOT
 # ================================================================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # comandos
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("leave", leave))
     app.add_handler(CommandHandler("kick", kick))
     app.add_handler(CommandHandler("party", list_party))
+    app.add_handler(CommandHandler("resetparty", reset_party))
 
     logger.info("🤖 S.A.M. conectado con la Game API y listo para narrar...")
     app.run_polling()
