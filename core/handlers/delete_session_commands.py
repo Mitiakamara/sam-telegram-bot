@@ -1,27 +1,22 @@
+import json
 from telegram import Update
 from telegram.ext import ContextTypes
 from core.scene_manager.scene_manager import SceneManager
 from core.utils.logger import safe_logger
 from core.utils.auth import is_admin
-import os
 
 logger = safe_logger(__name__)
 scene_manager = SceneManager()
-SESSIONS_PATH = "core/data/sessions"
 
 
 # ============================================================
-# /newsession – crea una nueva sesión de campaña (solo admin)
+# /save – guarda el progreso actual (solo admin)
 # ============================================================
-async def new_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Crea una nueva sesión de campaña persistente.
-    Solo disponible para administradores autorizados.
-
+    Guarda el progreso de una sesión activa.
     Uso:
-      /newsession <campaign_id> <party_id> [dm_mode]
-    Ejemplo:
-      /newsession demo_campaign party_001 auto
+      /save <session_id>
     """
     user_id = update.effective_user.id
     if not is_admin(user_id):
@@ -29,46 +24,44 @@ async def new_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     try:
-        args = context.args
-        if len(args) < 2:
+        if len(context.args) == 0:
             await update.message.reply_text(
-                "❗ Uso: `/newsession <campaign_id> <party_id> [dm_mode]`\n"
-                "Ejemplo: `/newsession demo_campaign party_001 auto`",
+                "❗ Debes indicar el ID de sesión. Ejemplo: `/save <session_id>`",
                 parse_mode="Markdown"
             )
             return
 
-        campaign_id = args[0]
-        party_id = args[1]
-        dm_mode = args[2] if len(args) > 2 else "auto"
+        session_id = context.args[0]
+        session = scene_manager.load_session(session_id)
 
-        session = scene_manager.create_session(campaign_id, party_id, dm_mode)
-        session_id = session.get("session_id", "undefined")
+        if not session:
+            await update.message.reply_text(
+                f"⚠️ No se encontró la sesión `{session_id}`",
+                parse_mode="Markdown"
+            )
+            return
 
+        scene_manager.save_progress(session)
         await update.message.reply_text(
-            f"🆕 *Nueva sesión creada*\n\n"
-            f"🎯 Campaña: `{campaign_id}`\n"
-            f"👥 Party: `{party_id}`\n"
-            f"🧠 Modo DM: `{dm_mode}`\n"
-            f"💾 ID de sesión: `{session_id}`\n\n"
-            f"Usa `/save {session_id}` o `/action {session_id} <acción>` para continuar.",
+            f"✅ Progreso de la sesión `{session_id}` guardado correctamente.",
             parse_mode="Markdown"
         )
 
     except Exception as e:
-        logger.exception("Error en /newsession:")
+        logger.exception("Error en /save:")
         await update.message.reply_text(
-            f"❌ Error al crear nueva sesión: {str(e)}", parse_mode="Markdown"
+            f"❌ Error al guardar sesión: {str(e)}", parse_mode="Markdown"
         )
 
 
 # ============================================================
-# /sessions – lista todas las sesiones guardadas (solo admin)
+# /load – carga una sesión guardada (solo admin)
 # ============================================================
-async def list_sessions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Lista todas las sesiones guardadas en /data/sessions/
-    Solo disponible para administradores autorizados.
+    Carga una sesión guardada desde disco.
+    Uso:
+      /load <session_id>
     """
     user_id = update.effective_user.id
     if not is_admin(user_id):
@@ -76,23 +69,74 @@ async def list_sessions_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     try:
-        if not os.path.exists(SESSIONS_PATH):
-            await update.message.reply_text("⚠️ No hay sesiones guardadas todavía.")
+        if len(context.args) == 0:
+            await update.message.reply_text(
+                "❗ Debes indicar el ID de sesión. Ejemplo: `/load <session_id>`",
+                parse_mode="Markdown"
+            )
             return
 
-        files = [f for f in os.listdir(SESSIONS_PATH) if f.startswith("session_") and f.endswith(".json")]
-        if not files:
-            await update.message.reply_text("📭 No se encontraron sesiones guardadas.")
+        session_id = context.args[0]
+        session = scene_manager.load_session(session_id)
+
+        if not session:
+            await update.message.reply_text(
+                f"⚠️ No se encontró la sesión `{session_id}`",
+                parse_mode="Markdown"
+            )
             return
 
-        text = "📜 *Sesiones guardadas:*\n\n"
-        for f in files:
-            text += f"• `{f.replace('session_', '').replace('.json', '')}`\n"
-
+        text = (
+            f"🎮 Sesión `{session_id}` cargada.\n\n"
+            f"Escena actual: `{session.get('current_scene_id', 'N/A')}`"
+        )
         await update.message.reply_text(text, parse_mode="Markdown")
 
     except Exception as e:
-        logger.exception("Error en /sessions:")
+        logger.exception("Error en /load:")
         await update.message.reply_text(
-            f"❌ Error al listar sesiones: {str(e)}", parse_mode="Markdown"
+            f"❌ Error al cargar sesión: {str(e)}", parse_mode="Markdown"
+        )
+
+
+# ============================================================
+# /scene – muestra información de la escena actual (sin restricción)
+# ============================================================
+async def scene_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Muestra detalles de una escena específica (disponible para todos).
+    Uso:
+      /scene <scene_id>
+    """
+    try:
+        if len(context.args) == 0:
+            await update.message.reply_text(
+                "❗ Usa `/scene <scene_id>` para ver detalles.",
+                parse_mode="Markdown"
+            )
+            return
+
+        scene_id = context.args[0]
+        scene = scene_manager.load_scene(scene_id)
+
+        if not scene:
+            await update.message.reply_text(
+                f"⚠️ No se encontró la escena `{scene_id}`",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Construir una vista resumida de la escena
+        summary = f"🎭 *{scene.get('title', 'Sin título')}*\n"
+        summary += f"\n{scene.get('description', 'Sin descripción disponible.')}\n"
+        summary += f"\n🌍 Tipo: `{scene.get('scene_type', 'N/A')}` | Estado: `{scene.get('status', 'N/A')}`"
+        summary += f"\n🎯 Objetivos: {len(scene.get('objectives', []))}"
+        summary += f"\n🎲 Acciones disponibles: {len(scene.get('available_actions', []))}"
+
+        await update.message.reply_text(summary, parse_mode="Markdown")
+
+    except Exception as e:
+        logger.exception("Error en /scene:")
+        await update.message.reply_text(
+            f"❌ Error al mostrar escena: {str(e)}", parse_mode="Markdown"
         )
