@@ -4,121 +4,129 @@ import random
 from typing import Optional
 
 # ============================================================
-# 🎭 TONE ADAPTER 5.2b+
+# 🎭 TONE ADAPTER 5.2b — Silent Mode
 # ------------------------------------------------------------
-# Aplica el tono narrativo adaptativo a textos narrativos
-# usando los parámetros definidos en /data/emotion/emotional_scale.json
+# Adapta el tono narrativo sin insertar etiquetas visibles.
+# Usa los datos de /data/emotion/emotional_scale.json
 # ============================================================
 
-# Ruta por defecto del archivo de configuración emocional
 EMOTIONAL_SCALE_PATH = os.getenv(
     "EMOTIONAL_SCALE_PATH",
     "data/emotion/emotional_scale.json"
 )
 
 # ============================================================
-# 📘 Cargar la escala emocional
+# 📘 Cargar configuración emocional
 # ============================================================
 def load_emotional_scale(path: str = EMOTIONAL_SCALE_PATH) -> dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data
+            return json.load(f)
     except FileNotFoundError:
-        print(f"[ToneAdapter] ⚠️ No se encontró {path}. Usando configuración por defecto.")
-        return {"scene_adaptation": {"default": "neutral"}, "emotions": {"neutral": {"tone": "Neutro"}}}
+        print(f"[ToneAdapter] ⚠️ No se encontró {path}. Se usará configuración mínima.")
+        return {"scene_adaptation": {"default": "neutral"}, "emotions": {"neutral": {"tone": "Equilibrado"}}}
     except Exception as e:
         print(f"[ToneAdapter] ⚠️ Error al cargar emotional_scale.json: {e}")
         return {}
 
 EMOTIONAL_SCALE = load_emotional_scale()
 
-
 # ============================================================
 # 🔍 Funciones auxiliares
 # ============================================================
 def get_emotion_for_scene(scene_type: str) -> str:
-    """Devuelve la emoción asociada al tipo de escena."""
+    """Obtiene la emoción principal asociada al tipo de escena."""
     mapping = EMOTIONAL_SCALE.get("scene_adaptation", {})
     return mapping.get(scene_type, "neutral")
 
-
 def get_tone_data(emotion: str) -> dict:
-    """Devuelve el bloque de datos de tono correspondiente a una emoción."""
+    """Devuelve la configuración narrativa de una emoción."""
     return EMOTIONAL_SCALE.get("emotions", {}).get(emotion, {})
 
-
-def get_random_bias_words(emotion: str, n: int = 2) -> list[str]:
-    """Selecciona palabras asociadas a la emoción para añadir matices al texto."""
+def pick_bias_words(emotion: str, n: int = 2) -> list[str]:
+    """Selecciona palabras representativas de la emoción."""
     tone_data = get_tone_data(emotion)
     vocab = tone_data.get("vocabulary_bias", [])
     return random.sample(vocab, min(n, len(vocab))) if vocab else []
 
 
 # ============================================================
-# ✨ Función principal de adaptación narrativa
+# ✨ Función principal silenciosa
 # ============================================================
 def apply_tone(scene_type: str, text: str, intensity: int = 3) -> str:
     """
-    Aplica el tono narrativo adaptativo según la emoción del tipo de escena.
+    Aplica el tono narrativo según la emoción de la escena,
+    sin mostrar etiquetas visibles ni paréntesis.
 
-    Parámetros:
-        - scene_type: tipo de escena (exploration, combat, rest, etc.)
-        - text: texto base a adaptar
-        - intensity: nivel 1–5 de fuerza emocional
-
-    Retorna:
-        - Texto con tono narrativo ajustado.
+    scene_type: tipo de escena (exploration, combat, rest, etc.)
+    text: texto base del narrador
+    intensity: nivel 1–5 (afecta ritmo y matices)
     """
     if not text:
         return ""
 
-    # 1️⃣ Obtener emoción y configuración de tono
     emotion = get_emotion_for_scene(scene_type)
     tone_data = get_tone_data(emotion)
-
-    tone_label = tone_data.get("tone", "Neutral")
-    style_hint = tone_data.get("style", "")
-    bias_words = get_random_bias_words(emotion, n=random.randint(1, 3))
+    bias_words = pick_bias_words(emotion, n=random.randint(1, 3))
 
     adapted_text = text.strip()
 
-    # 2️⃣ Adaptar ritmo y puntuación según intensidad
-    if intensity >= 4:
-        adapted_text = adapted_text.replace(".", "...")
-    if intensity >= 5:
+    # ============================================================
+    # 1️⃣ Variación de ritmo y puntuación según intensidad
+    # ============================================================
+    if intensity == 1:
+        # Tono más neutral, oraciones completas
+        adapted_text = adapted_text
+    elif intensity == 2:
+        # Ligero énfasis emocional: pausas suaves
+        adapted_text = adapted_text.replace(".", ",").replace(",", ", ")
+    elif intensity == 3:
+        # Fluido y descriptivo
+        adapted_text = adapted_text.replace(".", "...", 1)
+    elif intensity == 4:
+        # Ritmo acelerado o expectante
+        adapted_text = adapted_text.replace(".", "...").replace(",", "...")
+        if not adapted_text.endswith("..."):
+            adapted_text += "..."
+    elif intensity >= 5:
+        # Clímax emocional: frases cortas, tensión o exaltación
         adapted_text = adapted_text.upper()
+        if not adapted_text.endswith("!"):
+            adapted_text += "!"
 
-    # 3️⃣ Introducir sesgos léxicos (palabras clave de emoción)
-    if bias_words:
-        # Inserta una o dos palabras sesgadas al final para matizar el tono
-        adapted_text += f" ({', '.join(bias_words)})"
+    # ============================================================
+    # 2️⃣ Inserción natural de sesgos emocionales
+    # ============================================================
+    if bias_words and intensity >= 2:
+        insert_word = random.choice(bias_words)
+        # Inserta la palabra clave en una zona fluida del texto
+        parts = adapted_text.split()
+        if len(parts) > 6:
+            insert_index = random.randint(3, len(parts) - 2)
+            parts.insert(insert_index, insert_word)
+            adapted_text = " ".join(parts)
 
-    # 4️⃣ Prefijo de tono (solo visible si intensidad >= 3)
-    prefix = ""
-    if intensity >= 3:
-        prefix = f"[{tone_label}] "
+    # ============================================================
+    # 3️⃣ Ajuste final: estilo narrativo
+    # ============================================================
+    style_hint = tone_data.get("style", "")
+    if intensity >= 4 and "frases cortas" in style_hint:
+        # Simula respiración rápida o tensión: oraciones más breves
+        adapted_text = adapted_text.replace(",", ".").replace("..", ".")
+    elif intensity <= 2 and "pausada" in style_hint:
+        # Ritmo pausado para escenas melancólicas
+        adapted_text = adapted_text.replace(".", ",").replace("...", ",")
 
-    # 5️⃣ Ensamblar resultado final
-    final_text = f"{prefix}{adapted_text}"
-
-    # 6️⃣ (Opcional) Registrar el estilo o color narrativo
-    if intensity >= 4 and style_hint:
-        final_text += f" — {style_hint}"
-
-    return final_text
+    return adapted_text.strip()
 
 
 # ============================================================
-# 🧪 Modo de prueba manual
+# 🧪 Prueba manual (silenciosa)
 # ============================================================
 if __name__ == "__main__":
     demo_text = "El grupo avanza por el sendero nevado, el viento corta sus rostros."
-    scenes = ["exploration", "combat", "rest", "revelation", "victory", "defeat"]
-
-    print("=== DEMO TONE ADAPTER ===")
-    for s in scenes:
-        print(f"\nScene type: {s}")
-        for lvl in range(2, 6):
-            result = apply_tone(s, demo_text, intensity=lvl)
-            print(f"  Intensity {lvl}: {result}")
+    for scene in ["exploration", "combat", "rest", "revelation", "victory"]:
+        print(f"\nScene: {scene}")
+        for lvl in range(1, 6):
+            out = apply_tone(scene, demo_text, lvl)
+            print(f"  Intensity {lvl}: {out}")
