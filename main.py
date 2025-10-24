@@ -28,6 +28,11 @@ from core.models.action import Action, SceneContext, PCStats
 # ================================================================
 from core.handlers import scene_commands, action_commands
 from core.utils.logger import get_logger
+from core.handlers import session_commands
+
+# ...
+app.add_handler(CommandHandler("newsession", session_commands.new_session_command))
+app.add_handler(CommandHandler("sessions", session_commands.list_sessions_command))
 
 # ================================================================
 # ⚙️ CONFIGURACIÓN INICIAL
