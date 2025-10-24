@@ -24,15 +24,10 @@ from core.orchestrator import run_pipeline
 from core.models.action import Action, SceneContext, PCStats
 
 # ================================================================
-# 🌐 Persistencia y SceneManager (Fase 5.0 – 5.2)
+# 🌐 Persistencia y SceneManager (Fase 5.0 – 5.3)
 # ================================================================
-from core.handlers import scene_commands, action_commands
+from core.handlers import scene_commands, action_commands, session_commands
 from core.utils.logger import get_logger
-from core.handlers import session_commands
-
-# ...
-app.add_handler(CommandHandler("newsession", session_commands.new_session_command))
-app.add_handler(CommandHandler("sessions", session_commands.list_sessions_command))
 
 # ================================================================
 # ⚙️ CONFIGURACIÓN INICIAL
@@ -150,7 +145,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/scene <id>` – muestra una escena\n"
         "`/action <session_id> <acción>` – ejecuta acciones SRD\n"
         "`/save <session_id>` – guarda progreso\n"
-        "`/load <session_id>` – carga partida\n\n"
+        "`/load <session_id>` – carga partida\n"
+        "`/newsession <campaign_id> <party_id>` – crea una nueva sesión\n"
+        "`/sessions` – lista todas las sesiones guardadas\n\n"
         "Prepárate para adentrarte en un mundo de fantasía...",
         parse_mode="Markdown"
     )
@@ -256,6 +253,12 @@ async def main_async():
     app.add_handler(CommandHandler("load", scene_commands.load_command))
     app.add_handler(CommandHandler("scene", scene_commands.scene_command))
     app.add_handler(CommandHandler("action", action_commands.action_command))
+
+    # ------------------------------------------------------------
+    # NUEVOS HANDLERS DE SESIONES (Fase 5.3)
+    # ------------------------------------------------------------
+    app.add_handler(CommandHandler("newsession", session_commands.new_session_command))
+    app.add_handler(CommandHandler("sessions", session_commands.list_sessions_command))
 
     # ------------------------------------------------------------
     # INICIO DE LA APP
