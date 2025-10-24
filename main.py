@@ -24,6 +24,12 @@ from core.orchestrator import run_pipeline
 from core.models.action import Action, SceneContext, PCStats
 
 # ================================================================
+# 🌐 Persistencia y SceneManager (Fase 5.0 – 5.2)
+# ================================================================
+from core.handlers import scene_commands, action_commands
+from core.utils.logger import get_logger
+
+# ================================================================
 # ⚙️ CONFIGURACIÓN INICIAL
 # ================================================================
 print("🧠 Booting S.A.M. background worker...", flush=True)
@@ -37,7 +43,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
-logger = logging.getLogger(__name__)
+logger = get_logger("sam_main")
 
 # ================================================================
 # 🧙 FUNCIONES BASE DEL DEMO "La Mina Olvidada"
@@ -131,15 +137,15 @@ async def handle_demo_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # ================================================================
 # 🧠 FUNCIONES PRINCIPALES DEL BOT
 # ================================================================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🌟 *Bienvenido a S.A.M.*, tu Dungeon Master virtual.\n\n"
         "Usa `/join` para unirte a la aventura o `/demo` para probar una historia corta.\n\n"
-        "Ejemplos:\n"
-        "➡️ `combat medium`\n"
-        "➡️ `explore dungeon`\n"
-        "➡️ `rest junto a la fogata`\n\n"
+        "🔹 Nuevos comandos de persistencia:\n"
+        "`/scene <id>` – muestra una escena\n"
+        "`/action <session_id> <acción>` – ejecuta acciones SRD\n"
+        "`/save <session_id>` – guarda progreso\n"
+        "`/load <session_id>` – carga partida\n\n"
         "Prepárate para adentrarte en un mundo de fantasía...",
         parse_mode="Markdown"
     )
@@ -222,21 +228,33 @@ async def main_async():
         # 🧹 Limpieza del webhook previo
         await bot.delete_webhook(drop_pending_updates=True)
         logging.info("🧹 Webhook borrado antes del polling.")
-        # 🕓 Espera para evitar conflicto con la instancia anterior
         await asyncio.sleep(10)
     except Exception as e:
         logging.warning(f"⚠️ No se pudo borrar webhook inicial: {e}")
 
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # ------------------------------------------------------------
+    # HANDLERS ORIGINALES (Demo + Orquestador)
+    # ------------------------------------------------------------
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("state", state))
     app.add_handler(CommandHandler("demo", lambda u, c: send_scene(u, c, "mine_entrance")))
     app.add_handler(CallbackQueryHandler(handle_demo_choice))
-
-    # 🧠 NUEVO: acciones libres → orquestador narrativo
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_action))
 
+    # ------------------------------------------------------------
+    # NUEVOS HANDLERS DE PERSISTENCIA Y ESCENAS (Fase 5.0–5.2)
+    # ------------------------------------------------------------
+    app.add_handler(CommandHandler("save", scene_commands.save_command))
+    app.add_handler(CommandHandler("load", scene_commands.load_command))
+    app.add_handler(CommandHandler("scene", scene_commands.scene_command))
+    app.add_handler(CommandHandler("action", action_commands.action_command))
+
+    # ------------------------------------------------------------
+    # INICIO DE LA APP
+    # ------------------------------------------------------------
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
