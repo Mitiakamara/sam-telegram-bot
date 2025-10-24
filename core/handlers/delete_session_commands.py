@@ -1,113 +1,98 @@
-import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CallbackQueryHandler
+from telegram import Update
+from telegram.ext import ContextTypes
+from core.scene_manager.scene_manager import SceneManager
 from core.utils.logger import safe_logger
 from core.utils.auth import is_admin
+import os
 
 logger = safe_logger(__name__)
+scene_manager = SceneManager()
 SESSIONS_PATH = "core/data/sessions"
 
 
 # ============================================================
-# /deletesession – requiere permiso de administrador
+# /newsession – crea una nueva sesión de campaña (solo admin)
 # ============================================================
-async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def new_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Crea una nueva sesión de campaña persistente.
+    Solo disponible para administradores autorizados.
+
+    Uso:
+      /newsession <campaign_id> <party_id> [dm_mode]
+    Ejemplo:
+      /newsession demo_campaign party_001 auto
+    """
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.message.reply_text("⛔ No tienes permiso para ejecutar este comando.")
         return
 
     try:
-        if len(context.args) == 0:
+        args = context.args
+        if len(args) < 2:
             await update.message.reply_text(
-                "❗ Uso: `/deletesession <session_id>` o `/deletesession all`",
+                "❗ Uso: `/newsession <campaign_id> <party_id> [dm_mode]`\n"
+                "Ejemplo: `/newsession demo_campaign party_001 auto`",
                 parse_mode="Markdown"
             )
             return
 
-        target = context.args[0].strip().lower()
-        context.user_data["delete_target"] = target
+        campaign_id = args[0]
+        party_id = args[1]
+        dm_mode = args[2] if len(args) > 2 else "auto"
 
-        if target == "all":
-            text = (
-                "⚠️ *Confirmación requerida*\n\n"
-                "¿Seguro que deseas eliminar **todas las sesiones guardadas**?\n"
-                "Esta acción *no se puede deshacer*."
-            )
-        else:
-            text = (
-                f"⚠️ *Confirmación requerida*\n\n"
-                f"¿Seguro que deseas eliminar la sesión `{target}`?\n"
-                "Esta acción *no se puede deshacer*."
-            )
+        session = scene_manager.create_session(campaign_id, party_id, dm_mode)
+        session_id = session.get("session_id", "undefined")
 
-        buttons = [
-            [
-                InlineKeyboardButton("✅ Confirmar", callback_data=f"confirm_delete_{target}"),
-                InlineKeyboardButton("❌ Cancelar", callback_data="cancel_delete")
-            ]
-        ]
-        markup = InlineKeyboardMarkup(buttons)
-
-        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=markup)
+        await update.message.reply_text(
+            f"🆕 *Nueva sesión creada*\n\n"
+            f"🎯 Campaña: `{campaign_id}`\n"
+            f"👥 Party: `{party_id}`\n"
+            f"🧠 Modo DM: `{dm_mode}`\n"
+            f"💾 ID de sesión: `{session_id}`\n\n"
+            f"Usa `/save {session_id}` o `/action {session_id} <acción>` para continuar.",
+            parse_mode="Markdown"
+        )
 
     except Exception as e:
-        logger.exception("Error en /deletesession (fase de confirmación):")
-        await update.message.reply_text(f"❌ Error al solicitar confirmación: {str(e)}", parse_mode="Markdown")
+        logger.exception("Error en /newsession:")
+        await update.message.reply_text(
+            f"❌ Error al crear nueva sesión: {str(e)}", parse_mode="Markdown"
+        )
 
 
 # ============================================================
-# 🔘 Callback: confirmación o cancelación
+# /sessions – lista todas las sesiones guardadas (solo admin)
 # ============================================================
-async def handle_delete_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data
-    user_id = query.from_user.id
-
+async def list_sessions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Lista todas las sesiones guardadas en /data/sessions/
+    Solo disponible para administradores autorizados.
+    """
+    user_id = update.effective_user.id
     if not is_admin(user_id):
-        await query.edit_message_text("⛔ No tienes permiso para realizar esta acción.")
+        await update.message.reply_text("⛔ No tienes permiso para ejecutar este comando.")
         return
 
-    target = data.replace("confirm_delete_", "", 1) if data.startswith("confirm_delete_") else None
-
     try:
-        if data == "cancel_delete":
-            await query.edit_message_text("❎ Eliminación cancelada. No se borró ninguna sesión.")
-            return
-
         if not os.path.exists(SESSIONS_PATH):
-            await query.edit_message_text("⚠️ No se encontró el directorio de sesiones.")
+            await update.message.reply_text("⚠️ No hay sesiones guardadas todavía.")
             return
 
-        # 🧹 Eliminar todas las sesiones
-        if target == "all":
-            count = 0
-            for f in os.listdir(SESSIONS_PATH):
-                if f.startswith("session_") or f.startswith("autosave_"):
-                    os.remove(os.path.join(SESSIONS_PATH, f))
-                    count += 1
-            await query.edit_message_text(f"🗑️ Todas las sesiones eliminadas ({count} archivos).")
-            logger.info(f"Eliminadas {count} sesiones.")
+        files = [f for f in os.listdir(SESSIONS_PATH) if f.startswith("session_") and f.endswith(".json")]
+        if not files:
+            await update.message.reply_text("📭 No se encontraron sesiones guardadas.")
             return
 
-        # 🗂️ Eliminar una sesión específica
-        session_file = os.path.join(SESSIONS_PATH, f"session_{target}.json")
-        autosave_file = os.path.join(SESSIONS_PATH, f"autosave_{target}.json")
+        text = "📜 *Sesiones guardadas:*\n\n"
+        for f in files:
+            text += f"• `{f.replace('session_', '').replace('.json', '')}`\n"
 
-        deleted = False
-        for path in [session_file, autosave_file]:
-            if os.path.exists(path):
-                os.remove(path)
-                deleted = True
-                logger.info(f"Eliminada sesión: {path}")
-
-        if deleted:
-            await query.edit_message_text(f"🗑️ Sesión `{target}` eliminada correctamente.", parse_mode="Markdown")
-        else:
-            await query.edit_message_text(f"⚠️ No se encontró ninguna sesión con ID `{target}`.", parse_mode="Markdown")
+        await update.message.reply_text(text, parse_mode="Markdown")
 
     except Exception as e:
-        logger.exception("Error en confirmación de borrado:")
-        await query.edit_message_text(f"❌ Error al eliminar sesiones: {str(e)}", parse_mode="Markdown")
+        logger.exception("Error en /sessions:")
+        await update.message.reply_text(
+            f"❌ Error al listar sesiones: {str(e)}", parse_mode="Markdown"
+        )
