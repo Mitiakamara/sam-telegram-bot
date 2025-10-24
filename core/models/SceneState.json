@@ -1,0 +1,17 @@
+{
+  "scene_id": "",
+  "title": "",
+  "description": "",
+  "scene_type": "",
+  "status": "active",
+  "objectives": [],
+  "npcs": [],
+  "environment": {
+    "lighting": "",
+    "weather": "",
+    "terrain": ""
+  },
+  "available_actions": [],
+  "transitions": [],
+  "random_events": []
+}
