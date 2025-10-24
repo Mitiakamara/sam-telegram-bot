@@ -1,4 +1,6 @@
 {
+  "model_version": "5.3",
+  "description": "Plantilla base para sesiones de juego con persistencia emocional adaptativa.",
   "session_id": "",
   "campaign_id": "",
   "party_id": "",
@@ -21,6 +23,30 @@
     "current_emotion": "neutral",
     "emotion_intensity": 3,
     "emotion_history": [],
-    "emotion_lock": false
+    "emotion_lock": false,
+    "mood_shift_rules": {
+      "positive_shift": {
+        "from": ["fear", "melancholy"],
+        "to": ["hope", "epic"],
+        "trigger_keywords": ["victory", "rescate", "curación", "reencuentro"]
+      },
+      "negative_shift": {
+        "from": ["neutral", "hope"],
+        "to": ["tension", "fear"],
+        "trigger_keywords": ["muerte", "fracaso", "traición", "amenaza"]
+      },
+      "comic_relief": {
+        "from": ["tension", "epic"],
+        "to": ["comic"],
+        "trigger_keywords": ["humor", "torpeza", "ironía"]
+      }
+    }
+  },
+
+  "metadata": {
+    "author": "S.A.M. Narrative Engine",
+    "created": "2025-10-24",
+    "language": "es-ES",
+    "license": "CC-BY-4.0"
   }
 }
