@@ -5,7 +5,8 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 from core.utils.logger import safe_logger
-from core.tone_adapter import apply_tone  # ← integración de tono narrativo adaptativo
+from core.tone_adapter import apply_tone
+from core.emotion.emotion_logic import EmotionLogic  # 🎭 integración emocional
 
 logger = safe_logger(__name__)
 
@@ -13,7 +14,7 @@ logger = safe_logger(__name__)
 class SceneManager:
     """
     Administra la carga, guardado y transición de escenas en una sesión activa.
-    Compatible con estructura JSON definida en Fase 5.0 (GameSession / SceneState).
+    Integra tono narrativo adaptativo (Fase 5.2) y persistencia emocional (Fase 5.3).
     """
 
     def __init__(self, base_path: str = "core/data/sessions/"):
@@ -25,11 +26,9 @@ class SceneManager:
     # Utilidades internas
     # ============================================================
     def _session_file(self, session_id: str) -> str:
-        """Ruta completa del archivo de sesión."""
         return os.path.join(self.base_path, f"session_{session_id}.json")
 
     def _load_json(self, path: str) -> Dict[str, Any]:
-        """Carga un archivo JSON en memoria."""
         if not os.path.exists(path):
             logger.warning(f"No existe el archivo: {path}")
             return {}
@@ -41,7 +40,6 @@ class SceneManager:
             return {}
 
     def _save_json(self, path: str, data: Dict[str, Any]):
-        """Guarda un diccionario como JSON."""
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
@@ -50,13 +48,10 @@ class SceneManager:
             logger.exception(f"Error al guardar {path}: {e}")
 
     # ============================================================
-    # Métodos principales
+    # Sesiones
     # ============================================================
 
     def create_session(self, campaign_id: str, party_id: str, dm_mode: str = "auto") -> Dict[str, Any]:
-        """
-        Crea una nueva sesión basada en la plantilla game_session.json.
-        """
         session_id = str(uuid.uuid4())
         template_path = "core/models/GameSession.json"
         data = self._load_json(template_path)
@@ -93,7 +88,6 @@ class SceneManager:
         return data
 
     def load_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Carga una sesión existente desde disco."""
         path = self._session_file(session_id)
         session = self._load_json(path)
         if session:
@@ -103,30 +97,20 @@ class SceneManager:
         return session or None
 
     def save_progress(self, session_data: Dict[str, Any]):
-        """Guarda los cambios actuales en el archivo correspondiente."""
         session_id = session_data.get("session_id")
         if not session_id:
             logger.error("No se puede guardar: session_id ausente.")
             return
         self._save_json(self._session_file(session_id), session_data)
 
-    def autosave(self, session_data: Dict[str, Any]):
-        """Crea una copia de seguridad automática del estado actual."""
-        try:
-            sid = session_data.get("session_id", "unknown")
-            auto_path = os.path.join(self.base_path, f"autosave_{sid}.json")
-            session_data["timestamp"] = datetime.utcnow().isoformat()
-            self._save_json(auto_path, session_data)
-            logger.info(f"Autosave completado para sesión {sid}")
-        except Exception as e:
-            logger.exception(f"Error en autosave: {e}")
+    # ============================================================
+    # Escenas
+    # ============================================================
 
     def load_scene(self, scene_id: str) -> Dict[str, Any]:
-        """Carga la plantilla de escena y aplica tono adaptativo."""
         template_path = "core/models/SceneState.json"
         data = self._load_json(template_path)
         if not data:
-            logger.warning("Plantilla de escena vacía. Se genera estructura mínima.")
             data = {
                 "scene_id": scene_id,
                 "title": "",
@@ -144,34 +128,41 @@ class SceneManager:
             }
 
         data["scene_id"] = scene_id
-
-        # Aplicar tono narrativo adaptativo si hay descripción
         base_desc = data.get("description", "")
         if base_desc:
             data["description_adapted"] = apply_tone(
-                scene_type=data.get("scene_type", "neutral"),
-                text=base_desc,
-                intensity=int(data.get("emotion_intensity", 3))
+                data.get("scene_type", "neutral"),
+                base_desc,
+                int(data.get("emotion_intensity", 3))
             )
         return data
 
-    def trigger_event(self, scene: Dict[str, Any], event_id: str) -> Dict[str, Any]:
-        """Ejecuta un evento aleatorio o programado en la escena."""
+    def trigger_event(self, session_data: Dict[str, Any], scene: Dict[str, Any], event_id: str) -> Dict[str, Any]:
+        """Ejecuta un evento aleatorio y actualiza emoción según el resultado."""
         found = next((e for e in scene.get("random_events", []) if e["id"] == event_id), None)
         if not found:
             logger.warning(f"Evento {event_id} no encontrado en escena {scene.get('scene_id')}")
             return scene
-        logger.info(f"Evento disparado [{event_id}]: {found.get('event')}")
-        if found.get("description"):
+
+        logger.info(f"🎬 Evento disparado [{event_id}]: {found.get('event')}")
+        event_text = found.get("description", "")
+        if event_text:
             found["description_adapted"] = apply_tone(
-                scene_type=scene.get("scene_type", "neutral"),
-                text=found["description"],
-                intensity=scene.get("emotion_intensity", 3)
+                scene.get("scene_type", "neutral"),
+                event_text,
+                int(scene.get("emotion_intensity", 3))
             )
+
+        # 🧠 Evaluar el evento como trigger emocional
+        emotion_engine = EmotionLogic(session_data)
+        emotion_engine.evaluate_trigger(found.get("event", ""))
+        session_data = emotion_engine.export_state()
+
+        self.save_progress(session_data)
         return scene
 
     def transition_scene(self, session_data: Dict[str, Any], trigger: str) -> Optional[str]:
-        """Evalúa las transiciones y cambia a la siguiente escena."""
+        """Cambia a la siguiente escena y ajusta el estado emocional automáticamente."""
         current_id = session_data.get("current_scene_id")
         scene = self.load_scene(current_id)
         match = next((t for t in scene.get("transitions", []) if t["trigger"] == trigger), None)
@@ -180,21 +171,25 @@ class SceneManager:
             logger.warning(f"Sin transición válida para trigger '{trigger}' en escena {current_id}")
             return None
 
-        next_scene = match["next_scene"]
+        next_scene_id = match["next_scene"]
         session_data["scene_history"].append(current_id)
-        session_data["current_scene_id"] = next_scene
+        session_data["current_scene_id"] = next_scene_id
 
-        # Actualizar estado emocional global
-        emo_state = session_data.get("emotional_state", {})
-        emo_state["current_emotion"] = scene.get("scene_type", "neutral")
-        emo_state["emotion_intensity"] = scene.get("emotion_intensity", 3)
-        emo_state.setdefault("emotion_history", []).append({
-            "scene_id": current_id,
-            "emotion": emo_state["current_emotion"],
-            "timestamp": datetime.utcnow().isoformat()
-        })
-        session_data["emotional_state"] = emo_state
+        # Cargar próxima escena
+        next_scene = self.load_scene(next_scene_id)
+
+        # 🧠 Evaluar transición como trigger emocional
+        emotion_engine = EmotionLogic(session_data)
+        emotion_engine.evaluate_trigger(trigger)
+        session_data = emotion_engine.export_state()
+
+        # Aplicar tono adaptativo a la descripción
+        next_scene["description_adapted"] = apply_tone(
+            next_scene.get("scene_type", "neutral"),
+            next_scene.get("description", ""),
+            int(next_scene.get("emotion_intensity", 3))
+        )
 
         self.save_progress(session_data)
-        logger.info(f"Transición: {current_id} → {next_scene}")
-        return next_scene
+        logger.info(f"Transición emocional: {current_id} → {next_scene_id}")
+        return next_scene_id
