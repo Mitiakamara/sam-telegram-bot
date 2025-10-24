@@ -2,23 +2,21 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from core.scene_manager.scene_manager import SceneManager
 from core.utils.logger import safe_logger
+from core.utils.auth import check_admin
+import os
 
 logger = safe_logger(__name__)
 scene_manager = SceneManager()
+SESSIONS_PATH = "core/data/sessions"
 
 
 # ============================================================
-# /newsession – crea una nueva sesión de campaña
+# /newsession – crea una nueva sesión de campaña (solo admin)
 # ============================================================
 async def new_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Crea una nueva sesión de campaña en el sistema de persistencia.
+    if not await check_admin(update):
+        return
 
-    Uso:
-      /newsession <campaign_id> <party_id> [dm_mode]
-    Ejemplo:
-      /newsession demo_campaign party_001 auto
-    """
     try:
         args = context.args
         if len(args) < 2:
@@ -54,21 +52,18 @@ async def new_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # ============================================================
-# /sessions – lista las sesiones guardadas
+# /sessions – lista todas las sesiones guardadas (solo admin)
 # ============================================================
 async def list_sessions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Lista todas las sesiones guardadas en /data/sessions/
-    """
-    try:
-        import os
+    if not await check_admin(update):
+        return
 
-        sessions_dir = "core/data/sessions"
-        if not os.path.exists(sessions_dir):
+    try:
+        if not os.path.exists(SESSIONS_PATH):
             await update.message.reply_text("⚠️ No hay sesiones guardadas todavía.")
             return
 
-        files = [f for f in os.listdir(sessions_dir) if f.startswith("session_") and f.endswith(".json")]
+        files = [f for f in os.listdir(SESSIONS_PATH) if f.startswith("session_") and f.endswith(".json")]
         if not files:
             await update.message.reply_text("📭 No se encontraron sesiones guardadas.")
             return
