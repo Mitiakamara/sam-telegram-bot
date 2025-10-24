@@ -1,142 +1,108 @@
-import json
-from telegram import Update
-from telegram.ext import ContextTypes
-from core.scene_manager.scene_manager import SceneManager
+import os
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes, CallbackQueryHandler
 from core.utils.logger import safe_logger
-from core.utils.auth import is_admin
+from core.utils.auth import check_admin
 
 logger = safe_logger(__name__)
-scene_manager = SceneManager()
+SESSIONS_PATH = "core/data/sessions"
 
 
 # ============================================================
-# /save – guarda el progreso actual (solo admin)
+# /deletesession – requiere permiso de administrador
 # ============================================================
-async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Guarda el progreso de una sesión activa.
-    Uso:
-      /save <session_id>
-    """
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        await update.message.reply_text("⛔ No tienes permiso para ejecutar este comando.")
+async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_admin(update):
         return
 
     try:
         if len(context.args) == 0:
             await update.message.reply_text(
-                "❗ Debes indicar el ID de sesión. Ejemplo: `/save <session_id>`",
+                "❗ Uso: `/deletesession <session_id>` o `/deletesession all`",
                 parse_mode="Markdown"
             )
             return
 
-        session_id = context.args[0]
-        session = scene_manager.load_session(session_id)
+        target = context.args[0].strip().lower()
+        context.user_data["delete_target"] = target
 
-        if not session:
-            await update.message.reply_text(
-                f"⚠️ No se encontró la sesión `{session_id}`",
-                parse_mode="Markdown"
+        if target == "all":
+            text = (
+                "⚠️ *Confirmación requerida*\n\n"
+                "¿Seguro que deseas eliminar **todas las sesiones guardadas**?\n"
+                "Esta acción *no se puede deshacer*."
             )
-            return
+        else:
+            text = (
+                f"⚠️ *Confirmación requerida*\n\n"
+                f"¿Seguro que deseas eliminar la sesión `{target}`?\n"
+                "Esta acción *no se puede deshacer*."
+            )
 
-        scene_manager.save_progress(session)
-        await update.message.reply_text(
-            f"✅ Progreso de la sesión `{session_id}` guardado correctamente.",
-            parse_mode="Markdown"
-        )
+        buttons = [
+            [
+                InlineKeyboardButton("✅ Confirmar", callback_data=f"confirm_delete_{target}"),
+                InlineKeyboardButton("❌ Cancelar", callback_data="cancel_delete")
+            ]
+        ]
+        markup = InlineKeyboardMarkup(buttons)
+
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=markup)
 
     except Exception as e:
-        logger.exception("Error en /save:")
-        await update.message.reply_text(
-            f"❌ Error al guardar sesión: {str(e)}", parse_mode="Markdown"
-        )
+        logger.exception("Error en /deletesession (fase de confirmación):")
+        await update.message.reply_text(f"❌ Error al solicitar confirmación: {str(e)}", parse_mode="Markdown")
 
 
 # ============================================================
-# /load – carga una sesión guardada (solo admin)
+# 🔘 Callback: confirmación o cancelación
 # ============================================================
-async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Carga una sesión guardada desde disco.
-    Uso:
-      /load <session_id>
-    """
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        await update.message.reply_text("⛔ No tienes permiso para ejecutar este comando.")
+async def handle_delete_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if not await check_admin(update):
         return
 
+    data = query.data
+    target = data.replace("confirm_delete_", "", 1) if data.startswith("confirm_delete_") else None
+
     try:
-        if len(context.args) == 0:
-            await update.message.reply_text(
-                "❗ Debes indicar el ID de sesión. Ejemplo: `/load <session_id>`",
-                parse_mode="Markdown"
-            )
+        if data == "cancel_delete":
+            await query.edit_message_text("❎ Eliminación cancelada. No se borró ninguna sesión.")
             return
 
-        session_id = context.args[0]
-        session = scene_manager.load_session(session_id)
-
-        if not session:
-            await update.message.reply_text(
-                f"⚠️ No se encontró la sesión `{session_id}`",
-                parse_mode="Markdown"
-            )
+        if not os.path.exists(SESSIONS_PATH):
+            await query.edit_message_text("⚠️ No se encontró el directorio de sesiones.")
             return
 
-        text = (
-            f"🎮 Sesión `{session_id}` cargada.\n\n"
-            f"Escena actual: `{session.get('current_scene_id', 'N/A')}`"
-        )
-        await update.message.reply_text(text, parse_mode="Markdown")
+        # 🧹 Eliminar todas las sesiones
+        if target == "all":
+            count = 0
+            for f in os.listdir(SESSIONS_PATH):
+                if f.startswith("session_") or f.startswith("autosave_"):
+                    os.remove(os.path.join(SESSIONS_PATH, f))
+                    count += 1
+            await query.edit_message_text(f"🗑️ Todas las sesiones eliminadas ({count} archivos).")
+            logger.info(f"Eliminadas {count} sesiones.")
+            return
+
+        # 🗂️ Eliminar una sesión específica
+        session_file = os.path.join(SESSIONS_PATH, f"session_{target}.json")
+        autosave_file = os.path.join(SESSIONS_PATH, f"autosave_{target}.json")
+
+        deleted = False
+        for path in [session_file, autosave_file]:
+            if os.path.exists(path):
+                os.remove(path)
+                deleted = True
+                logger.info(f"Eliminada sesión: {path}")
+
+        if deleted:
+            await query.edit_message_text(f"🗑️ Sesión `{target}` eliminada correctamente.", parse_mode="Markdown")
+        else:
+            await query.edit_message_text(f"⚠️ No se encontró ninguna sesión con ID `{target}`.", parse_mode="Markdown")
 
     except Exception as e:
-        logger.exception("Error en /load:")
-        await update.message.reply_text(
-            f"❌ Error al cargar sesión: {str(e)}", parse_mode="Markdown"
-        )
-
-
-# ============================================================
-# /scene – muestra información de la escena actual (sin restricción)
-# ============================================================
-async def scene_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Muestra detalles de una escena específica (disponible para todos).
-    Uso:
-      /scene <scene_id>
-    """
-    try:
-        if len(context.args) == 0:
-            await update.message.reply_text(
-                "❗ Usa `/scene <scene_id>` para ver detalles.",
-                parse_mode="Markdown"
-            )
-            return
-
-        scene_id = context.args[0]
-        scene = scene_manager.load_scene(scene_id)
-
-        if not scene:
-            await update.message.reply_text(
-                f"⚠️ No se encontró la escena `{scene_id}`",
-                parse_mode="Markdown"
-            )
-            return
-
-        # Construir una vista resumida de la escena
-        summary = f"🎭 *{scene.get('title', 'Sin título')}*\n"
-        summary += f"\n{scene.get('description', 'Sin descripción disponible.')}\n"
-        summary += f"\n🌍 Tipo: `{scene.get('scene_type', 'N/A')}` | Estado: `{scene.get('status', 'N/A')}`"
-        summary += f"\n🎯 Objetivos: {len(scene.get('objectives', []))}"
-        summary += f"\n🎲 Acciones disponibles: {len(scene.get('available_actions', []))}"
-
-        await update.message.reply_text(summary, parse_mode="Markdown")
-
-    except Exception as e:
-        logger.exception("Error en /scene:")
-        await update.message.reply_text(
-            f"❌ Error al mostrar escena: {str(e)}", parse_mode="Markdown"
-        )
+        logger.exception("Error en confirmación de borrado:")
+        await query.edit_message_text(f"❌ Error al eliminar sesiones: {str(e)}", parse_mode="Markdown")
