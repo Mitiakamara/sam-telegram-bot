@@ -2,22 +2,21 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler
 from core.utils.logger import safe_logger
+from core.utils.auth import is_admin
 
 logger = safe_logger(__name__)
-
 SESSIONS_PATH = "core/data/sessions"
 
 
 # ============================================================
-# /deletesession – comando con confirmación interactiva
+# /deletesession – requiere permiso de administrador
 # ============================================================
 async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Solicita confirmación antes de eliminar una o todas las sesiones.
-    Uso:
-      /deletesession <session_id>   → elimina una sesión específica
-      /deletesession all            → elimina todas las sesiones
-    """
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("⛔ No tienes permiso para ejecutar este comando.")
+        return
+
     try:
         if len(context.args) == 0:
             await update.message.reply_text(
@@ -27,7 +26,7 @@ async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_T
             return
 
         target = context.args[0].strip().lower()
-        context.user_data["delete_target"] = target  # guardamos el objetivo temporalmente
+        context.user_data["delete_target"] = target
 
         if target == "all":
             text = (
@@ -61,11 +60,16 @@ async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_T
 # 🔘 Callback: confirmación o cancelación
 # ============================================================
 async def handle_delete_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ejecuta el borrado real si se confirma."""
     query = update.callback_query
     await query.answer()
 
     data = query.data
+    user_id = query.from_user.id
+
+    if not is_admin(user_id):
+        await query.edit_message_text("⛔ No tienes permiso para realizar esta acción.")
+        return
+
     target = data.replace("confirm_delete_", "", 1) if data.startswith("confirm_delete_") else None
 
     try:
