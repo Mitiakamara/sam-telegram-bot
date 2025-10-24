@@ -15,5 +15,12 @@
   "story_flags": {},
   "encounter_log": [],
   "timestamp": "",
-  "autosave": true
+  "autosave": true,
+
+  "emotional_state": {
+    "current_emotion": "neutral",
+    "emotion_intensity": 3,
+    "emotion_history": [],
+    "emotion_lock": false
+  }
 }
