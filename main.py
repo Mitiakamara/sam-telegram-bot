@@ -1,4 +1,4 @@
-# main.py
+# sam-telegram-bot/main.py
 import os
 import logging
 import httpx
@@ -24,10 +24,7 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GAME_API_URL = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com")
 ADMIN_IDS = os.getenv("BOT_ADMINS", "")  # IDs separados por comas
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("SAM.Bot")
 
 # ================================================================
@@ -77,7 +74,6 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     party_data = await api_request("GET", "/party")
     party_size = len(party_data.get("party", [])) if party_data else 1
-
     msg = party_events.on_player_join(party_size, player_name)
     await update.message.reply_text(msg or f"{player_name} se unió al grupo.")
 
@@ -90,7 +86,6 @@ async def leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     party_data = await api_request("GET", "/party")
     party_size = len(party_data.get("party", [])) if party_data else 0
-
     msg = party_events.on_player_leave(party_size, player_name, kicked=False)
     await update.message.reply_text(msg or f"{player_name} dejó el grupo.")
 
@@ -107,7 +102,6 @@ async def kick(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     party_data = await api_request("GET", "/party")
     party_size = len(party_data.get("party", [])) if party_data else 0
-
     msg = party_events.on_player_leave(party_size, target, kicked=True)
     await update.message.reply_text(msg or f"{target} fue expulsado del grupo.")
 
@@ -133,23 +127,23 @@ async def reset_party(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ No se pudo limpiar el grupo.")
 
 # ================================================================
-# 💬 CONVERSACIÓN NATURAL (sin comandos)
+# 💬 CONVERSACIÓN NATURAL (acciones y eventos)
 # ================================================================
 async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Interpreta mensajes sin comando como acciones o diálogos."""
+    """Interpreta mensajes sin comando como acciones o diálogos, y muestra eventos."""
     player_name = update.effective_user.first_name
     text = update.message.text.strip()
     if not text:
         return
 
-    # Detección simple de intención (modo)
+    # Detección de intención
     lowered = text.lower()
     if lowered.startswith(("digo", "hablo", "pregunto", "susurro")):
         mode = "dialogue"
     else:
         mode = "action"
 
-    # Enviar al motor de juego
+    # Enviar acción al motor de juego
     result = await api_request("POST", "/game/action", {
         "player": player_name,
         "action": text,
@@ -160,8 +154,19 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🤔 S.A.M. no entiende lo que intentas hacer.")
         return
 
+    # Mostrar respuesta narrativa principal
     narration = result["result"]
     await update.message.reply_text(narration)
+
+    # Si ocurre un evento dinámico, mostrarlo aparte
+    if "event" in result:
+        event = result["event"]
+        event_text = (
+            f"\n\n🔮 *Evento: {event['event_title']}*"
+            f"\n_Tipo:_ {event['event_type'].capitalize()}"
+            f"\n\n{event['event_narration']}"
+        )
+        await update.message.reply_text(event_text, parse_mode="Markdown")
 
 # ================================================================
 # 🚀 INICIO DEL BOT
@@ -169,17 +174,17 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Comandos principales
+    # Comandos de gestión
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("leave", leave))
     app.add_handler(CommandHandler("kick", kick))
     app.add_handler(CommandHandler("party", list_party))
     app.add_handler(CommandHandler("resetparty", reset_party))
 
-    # Captura de texto natural (no comandos)
+    # Modo conversacional
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_text))
 
-    logger.info("🤖 S.A.M. (modo conversacional) listo para narrar.")
+    logger.info("🤖 S.A.M. conectado y escuchando en modo narrativo + eventos.")
     app.run_polling()
 
 if __name__ == "__main__":
