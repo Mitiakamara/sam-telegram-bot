@@ -1,0 +1,19 @@
+{
+  "session_id": "",
+  "campaign_id": "",
+  "party_id": "",
+  "dm_mode": "auto",
+  "current_scene_id": "",
+  "scene_history": [],
+  "party_state": {
+    "members": [],
+    "location": "",
+    "rest_state": "long_rest",
+    "gold": 0,
+    "inventory": []
+  },
+  "story_flags": {},
+  "encounter_log": [],
+  "timestamp": "",
+  "autosave": true
+}
