@@ -24,7 +24,7 @@ from core.orchestrator import run_pipeline
 from core.models.action import Action, SceneContext, PCStats
 
 # ================================================================
-# 🌐 Persistencia y SceneManager (Fase 5.0 – 5.3)
+# 🌐 Persistencia y SceneManager (Fase 5.0 – 5.4)
 # ================================================================
 from core.handlers import (
     scene_commands,
@@ -153,7 +153,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/load <session_id>` – carga partida\n"
         "`/newsession <campaign_id> <party_id>` – crea una nueva sesión\n"
         "`/sessions` – lista todas las sesiones guardadas\n"
-        "`/deletesession <id|all>` – elimina una o todas las sesiones guardadas\n\n"
+        "`/deletesession <id|all>` – elimina una o todas las sesiones (con confirmación)\n\n"
         "Prepárate para adentrarte en un mundo de fantasía...",
         parse_mode="Markdown"
     )
@@ -253,7 +253,7 @@ async def main_async():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_action))
 
     # ------------------------------------------------------------
-    # NUEVOS HANDLERS DE PERSISTENCIA Y ESCENAS (Fase 5.0–5.3)
+    # NUEVOS HANDLERS DE PERSISTENCIA Y ESCENAS (Fase 5.0–5.4)
     # ------------------------------------------------------------
     app.add_handler(CommandHandler("save", scene_commands.save_command))
     app.add_handler(CommandHandler("load", scene_commands.load_command))
@@ -262,6 +262,8 @@ async def main_async():
     app.add_handler(CommandHandler("newsession", session_commands.new_session_command))
     app.add_handler(CommandHandler("sessions", session_commands.list_sessions_command))
     app.add_handler(CommandHandler("deletesession", delete_session_commands.delete_session_command))
+    app.add_handler(CallbackQueryHandler(delete_session_commands.handle_delete_confirmation,
+                                         pattern=r"^(confirm_delete_|cancel_delete)"))
 
     # ------------------------------------------------------------
     # INICIO DE LA APP
