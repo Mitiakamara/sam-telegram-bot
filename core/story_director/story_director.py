@@ -1,164 +1,218 @@
-# sam-telegram-bot/core/story_director/story_director.py
-"""
-StoryDirector
--------------
-Motor de decisiones narrativas adaptativas con:
-- Memoria dramática persistente (MemoryManager)
-- Reforzamiento temático adaptativo
-- Voz de narrador emergente (NarratorPersona)
-
-S.A.M. ya no es un narrador neutro: ahora adopta un estilo propio
-según las emociones, los temas recurrentes y la progresión dramática
-de la campaña.
-"""
-
-import random
+import os
 import json
 from datetime import datetime
 
-from core.scene_manager.tone_adapter import ToneAdapter
-from core.services.state_service import StateService
-from core.story_director.theme_tracker import ThemeTracker
-from core.story_director.dramatic_curve import DramaticCurve
-from core.story_director.memory_manager import MemoryManager
-from core.story_director.narrator_persona import NarratorPersona
+from core.scene_manager.scene_manager import SceneManager
+from core.tone_adapter.tone_adapter import ToneAdapter
+from core.mood_manager.mood_manager import MoodManager
 
+
+# ================================================================
+# 🎬 STORY DIRECTOR
+# Motor de decisiones narrativas y gestor de flujo adaptativo
+# ================================================================
 
 class StoryDirector:
-    def __init__(self, scene_manager, tone_adapter: ToneAdapter):
-        self.scene_manager = scene_manager
-        self.tone_adapter = tone_adapter
-        self.state_service = StateService()
-        self.theme_tracker = ThemeTracker()
-        self.dramatic_curve = DramaticCurve()
-        self.memory_manager = MemoryManager()
-        self.narrative_nodes = self._load_narrative_nodes()
+    """
+    Coordina el flujo narrativo general de la campaña.
+    Controla la creación y cierre de escenas, el tono adaptativo
+    y el clima emocional global de la historia.
+    """
 
-    # ==========================================================
-    # 🔹 CARGA DE NODOS NARRATIVOS
-    # ==========================================================
-    def _load_narrative_nodes(self):
-        """Carga la base de nodos narrativos desde JSON."""
-        try:
-            with open("core/story_director/narrative_nodes.json", "r", encoding="utf-8") as f:
+    def __init__(self, base_path: str = "data/"):
+        self.base_path = base_path
+        self.scene_manager = SceneManager(os.path.join(base_path, "game_state.json"))
+        self.tone_adapter = ToneAdapter(os.path.join(base_path, "emotion/emotional_scale.json"))
+        self.mood_manager = MoodManager(os.path.join(base_path, "game_state.json"))
+
+        self.state_path = os.path.join(base_path, "game_state.json")
+        self.state = self._load_state()
+
+    # ------------------------------------------------------------
+    # 🔧 UTILIDADES INTERNAS
+    # ------------------------------------------------------------
+
+    def _load_state(self):
+        if not os.path.exists(self.state_path):
+            return {}
+        with open(self.state_path, "r", encoding="utf-8") as f:
+            try:
                 return json.load(f)
-        except Exception:
-            return []
+            except json.JSONDecodeError:
+                return {}
 
-    # ==========================================================
-    # 🔹 ANÁLISIS DE CONTEXTO
-    # ==========================================================
-    def analyze_context(self):
+    def _save_state(self):
+        with open(self.state_path, "w", encoding="utf-8") as f:
+            json.dump(self.state, f, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------
+    # 🎭 CONTROL DE ESCENAS
+    # ------------------------------------------------------------
+
+    def create_scene(self, title: str, description: str, scene_type: str, emotion_intensity: float = 0.5):
         """
-        Analiza el estado actual del juego:
-        - Nivel emocional
-        - Tema detectado
-        - Etapa de la curva dramática
+        Crea una nueva escena y la adapta según el mood global actual.
         """
-        game_state = self.state_service.load_state()
-        emotion_level = game_state.get("emotion_intensity", 3)
-        current_theme = self.theme_tracker.detect_theme(game_state)
-        curve_stage = self.dramatic_curve.get_stage()
-        return emotion_level, current_theme, curve_stage
+        current_mood = self.mood_manager.mood_state
+        genre_profile = self.mood_manager.genre_profile
 
-    # ==========================================================
-    # 🔹 SELECCIÓN DE NODO SIGUIENTE (con reforzamiento temático)
-    # ==========================================================
-    def select_next_node(self):
-        """
-        Elige el siguiente nodo narrativo basándose en emoción, tema y curva dramática.
-        Integra la memoria para reforzar o romper temas recurrentes.
-        """
-        emotion_level, theme, stage = self.analyze_context()
-        recurrent_theme = self.memory_manager.get_recurrent_theme()
-        avg_emotion = self.memory_manager.get_average_emotion()
-
-        # Filtrar nodos compatibles
-        candidates = [
-            n for n in self.narrative_nodes
-            if stage in n.get("stages", [])
-            and emotion_level in n.get("emotion_range", [])
-        ]
-
-        if not candidates:
-            return None
-
-        # Reforzamiento temático adaptativo
-        weighted_nodes = []
-        for node in candidates:
-            weight = 1.0
-            node_theme = node.get("theme")
-            tone = node.get("tone", "neutral")
-
-            # 🔹 Reforzar temas dominantes
-            if recurrent_theme and node_theme == recurrent_theme:
-                weight *= 2.0
-
-            # 🔹 Equilibrar emoción global
-            if avg_emotion >= 4 and tone == "dark":
-                weight *= 0.8  # evita excesiva tensión
-            elif avg_emotion <= 2 and tone == "hopeful":
-                weight *= 1.5  # refuerza alivio o esperanza
-
-            weighted_nodes.append((node, weight))
-
-        # Selección ponderada
-        total_weight = sum(w for _, w in weighted_nodes)
-        rand = random.uniform(0, total_weight)
-        cumulative = 0
-        for node, weight in weighted_nodes:
-            cumulative += weight
-            if rand <= cumulative:
-                return node
-
-        return random.choice(candidates)
-
-    # ==========================================================
-    # 🔹 GENERACIÓN DE TRANSICIÓN NARRATIVA
-    # ==========================================================
-    def generate_transition(self):
-        """
-        Crea una transición narrativa adaptativa hacia el siguiente nodo.
-        Ajusta tono y emoción, registra el evento en la memoria dramática
-        y aplica la voz emergente del narrador.
-        """
-        node = self.select_next_node()
-
-        if not node:
-            return "El silencio del mundo es momentáneo; el destino aún no ha decidido su próximo paso."
-
-        # Adaptar descripción al nivel emocional
-        description = self.tone_adapter.adapt_description(
-            node["description"],
-            emotion_intensity=node.get("default_emotion", 3)
+        # 1️⃣ Crear la escena base
+        new_scene = self.scene_manager.create_scene(
+            title=title,
+            description=description,
+            scene_type=scene_type,
+            emotion_intensity=emotion_intensity
         )
 
-        # Registrar transición en el estado general
-        transition = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "node_id": node.get("id", "unknown"),
-            "scene_transition": node.get("type", "narrative"),
-            "description": description,
-            "theme": node.get("theme", "indefinido")
+        # 2️⃣ Adaptar tono de descripción según mood global
+        adapted_description = self.tone_adapter.adapt_tone(
+            description=description,
+            emotion=current_mood,
+            intensity=emotion_intensity,
+            genre=genre_profile
+        )
+
+        new_scene["description_adapted"] = adapted_description
+
+        # 3️⃣ Registrar escena
+        self.scene_manager.add_scene(new_scene)
+
+        # 4️⃣ Analizar clima emocional global
+        self._update_mood()
+
+        return new_scene
+
+    def close_scene(self, scene_id: str, result: str = None):
+        """
+        Cierra una escena y actualiza el mood global de la campaña.
+        """
+        closed_scene = self.scene_manager.close_scene(scene_id, result)
+        if not closed_scene:
+            return None
+
+        # 🔄 Actualiza mood con últimas escenas
+        self._update_mood()
+        return closed_scene
+
+    def _update_mood(self):
+        """
+        Analiza las últimas escenas para ajustar el mood global.
+        Si hay saltos bruscos, sugiere una transición tonal.
+        """
+        recent_scenes = self.scene_manager.get_recent_scenes(limit=5)
+        if not recent_scenes:
+            return
+
+        # 1️⃣ Calcular mood global
+        mood, intensity = self.mood_manager.analyze_recent_scenes([
+            {
+                "scene_id": s.get("scene_id"),
+                "emotion": s.get("emotion", "neutral"),
+                "emotion_intensity": s.get("emotion_intensity", 0.5)
+            }
+            for s in recent_scenes
+        ])
+
+        # 2️⃣ Normalizar tono
+        transition = self.mood_manager.normalize_mood()
+        if transition:
+            self._inject_transition_scene(transition)
+
+        # 3️⃣ Reforzar alineación de género
+        self.mood_manager.align_to_genre()
+
+        print(f"[🎭 MoodManager] Estado tonal actualizado → {mood} ({intensity})")
+
+    # ------------------------------------------------------------
+    # 🧩 TRANSICIONES NARRATIVAS
+    # ------------------------------------------------------------
+
+    def _inject_transition_scene(self, transition_data: dict):
+        """
+        Inserta una escena puente si el MoodManager detecta un salto tonal fuerte.
+        """
+        if not transition_data:
+            return
+
+        title = "Transición emocional"
+        description = transition_data.get("suggestion", "Un cambio sutil de atmósfera une las emociones opuestas.")
+        scene_type = "transition"
+
+        new_scene = self.scene_manager.create_scene(
+            title=title,
+            description=description,
+            scene_type=scene_type,
+            emotion_intensity=0.3
+        )
+        new_scene["description_adapted"] = self.tone_adapter.adapt_tone(
+            description=description,
+            emotion="neutral",
+            intensity=0.3
+        )
+        self.scene_manager.add_scene(new_scene)
+        print(f"[⚖️ Transition] Escena de transición generada entre moods {transition_data['from']} → {transition_data['to']}")
+
+    # ------------------------------------------------------------
+    # 💬 RETROALIMENTACIÓN EMOCIONAL (Jugador o sistema)
+    # ------------------------------------------------------------
+
+    def apply_feedback(self, player_emotion: str, delta: float = 0.1):
+        """
+        Ajusta la intensidad del mood global según la respuesta emocional del jugador o el ritmo narrativo.
+        """
+        new_intensity = self.mood_manager.adjust_from_feedback(player_emotion, delta)
+        print(f"[🧠 Feedback] Intensidad tonal ajustada → {new_intensity} por emoción '{player_emotion}'")
+
+    # ------------------------------------------------------------
+    # 🧾 CONSULTAS Y UTILIDADES
+    # ------------------------------------------------------------
+
+    def get_current_mood(self):
+        """
+        Devuelve el estado tonal global actual.
+        """
+        return {
+            "mood_state": self.mood_manager.mood_state,
+            "mood_intensity": self.mood_manager.mood_intensity,
+            "genre_profile": self.mood_manager.genre_profile,
+            "last_update": self.mood_manager.last_update
         }
-        self.state_service.update_story_flow(transition)
 
-        # Registrar en memoria dramática
-        try:
-            self.memory_manager.record_event(
-                description=description,
-                theme=node.get("theme", "indefinido"),
-                emotion_level=node.get("default_emotion", 3),
-                stage=self.dramatic_curve.get_stage()
-            )
-        except Exception as e:
-            print(f"[WARN] Error registrando evento en memoria: {e}")
+    def get_scene_history(self, limit: int = 10):
+        """
+        Retorna un resumen de las últimas escenas y su clima emocional.
+        """
+        recent = self.scene_manager.get_recent_scenes(limit=limit)
+        return [
+            {
+                "title": s.get("title"),
+                "emotion": s.get("emotion"),
+                "emotion_intensity": s.get("emotion_intensity"),
+                "status": s.get("status")
+            }
+            for s in recent
+        ]
 
-        # Aplicar estilo narrativo emergente
-        try:
-            persona = NarratorPersona()
-            description = persona.apply_persona(description)
-        except Exception as e:
-            print(f"[WARN] Error aplicando estilo narrativo: {e}")
 
-        return description
+# ================================================================
+# ✅ Ejemplo de uso (modo silencioso)
+# ================================================================
+
+if __name__ == "__main__":
+    sd = StoryDirector(base_path="data/")
+    print("🎬 Iniciando Story Director con Mood Manager integrado")
+
+    # Crear una escena de ejemplo
+    scene = sd.create_scene(
+        title="El eco del hielo",
+        description="Los héroes avanzan por un valle cubierto de escarcha, mientras el viento silba entre las ruinas.",
+        scene_type="exploration",
+        emotion_intensity=0.6
+    )
+    print("➡️ Escena creada:", scene["title"])
+
+    # Cerrar escena y analizar mood
+    sd.close_scene(scene_id=scene["scene_id"], result="descubren un portal sellado en hielo")
+
+    # Consultar mood global
+    print("🌡️ Estado tonal actual:", sd.get_current_mood())
