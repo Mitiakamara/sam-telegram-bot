@@ -2,11 +2,14 @@
 """
 StoryDirector
 -------------
-Motor de decisiones narrativas adaptativas con memoria dramática y
-reforzamiento temático.
+Motor de decisiones narrativas adaptativas con:
+- Memoria dramática persistente (MemoryManager)
+- Reforzamiento temático adaptativo
+- Voz de narrador emergente (NarratorPersona)
 
-Ahora S.A.M. puede detectar los temas recurrentes de la historia
-y decidir si desea reforzarlos o romperlos para mantener la tensión narrativa.
+S.A.M. ya no es un narrador neutro: ahora adopta un estilo propio
+según las emociones, los temas recurrentes y la progresión dramática
+de la campaña.
 """
 
 import random
@@ -18,6 +21,7 @@ from core.services.state_service import StateService
 from core.story_director.theme_tracker import ThemeTracker
 from core.story_director.dramatic_curve import DramaticCurve
 from core.story_director.memory_manager import MemoryManager
+from core.story_director.narrator_persona import NarratorPersona
 
 
 class StoryDirector:
@@ -34,6 +38,7 @@ class StoryDirector:
     # 🔹 CARGA DE NODOS NARRATIVOS
     # ==========================================================
     def _load_narrative_nodes(self):
+        """Carga la base de nodos narrativos desde JSON."""
         try:
             with open("core/story_director/narrative_nodes.json", "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -44,6 +49,12 @@ class StoryDirector:
     # 🔹 ANÁLISIS DE CONTEXTO
     # ==========================================================
     def analyze_context(self):
+        """
+        Analiza el estado actual del juego:
+        - Nivel emocional
+        - Tema detectado
+        - Etapa de la curva dramática
+        """
         game_state = self.state_service.load_state()
         emotion_level = game_state.get("emotion_intensity", 3)
         current_theme = self.theme_tracker.detect_theme(game_state)
@@ -55,14 +66,14 @@ class StoryDirector:
     # ==========================================================
     def select_next_node(self):
         """
-        Elige el siguiente nodo narrativo basado en emoción, tema y curva,
-        con influencia del tema recurrente guardado en memoria.
+        Elige el siguiente nodo narrativo basándose en emoción, tema y curva dramática.
+        Integra la memoria para reforzar o romper temas recurrentes.
         """
         emotion_level, theme, stage = self.analyze_context()
         recurrent_theme = self.memory_manager.get_recurrent_theme()
         avg_emotion = self.memory_manager.get_average_emotion()
 
-        # Filtrar por etapa dramática y emoción
+        # Filtrar nodos compatibles
         candidates = [
             n for n in self.narrative_nodes
             if stage in n.get("stages", [])
@@ -72,21 +83,22 @@ class StoryDirector:
         if not candidates:
             return None
 
-        # 🔹 Reforzamiento temático adaptativo
+        # Reforzamiento temático adaptativo
         weighted_nodes = []
         for node in candidates:
             weight = 1.0
             node_theme = node.get("theme")
+            tone = node.get("tone", "neutral")
 
-            # Si el tema coincide con el recurrente → mayor peso (reforzar)
+            # 🔹 Reforzar temas dominantes
             if recurrent_theme and node_theme == recurrent_theme:
                 weight *= 2.0
 
-            # Si el tema es opuesto (según curva emocional) → menor o mayor peso
-            if avg_emotion >= 4 and node.get("tone") == "dark":
-                weight *= 0.8  # Evitar excesiva tensión
-            elif avg_emotion <= 2 and node.get("tone") == "hopeful":
-                weight *= 1.5  # Reforzar alivio
+            # 🔹 Equilibrar emoción global
+            if avg_emotion >= 4 and tone == "dark":
+                weight *= 0.8  # evita excesiva tensión
+            elif avg_emotion <= 2 and tone == "hopeful":
+                weight *= 1.5  # refuerza alivio o esperanza
 
             weighted_nodes.append((node, weight))
 
@@ -102,38 +114,51 @@ class StoryDirector:
         return random.choice(candidates)
 
     # ==========================================================
-    # 🔹 GENERACIÓN DE TRANSICIÓN NARRATIVA (con registro en memoria)
+    # 🔹 GENERACIÓN DE TRANSICIÓN NARRATIVA
     # ==========================================================
     def generate_transition(self):
+        """
+        Crea una transición narrativa adaptativa hacia el siguiente nodo.
+        Ajusta tono y emoción, registra el evento en la memoria dramática
+        y aplica la voz emergente del narrador.
+        """
         node = self.select_next_node()
 
         if not node:
             return "El silencio del mundo es momentáneo; el destino aún no ha decidido su próximo paso."
 
-        # Adaptar descripción según emoción
+        # Adaptar descripción al nivel emocional
         description = self.tone_adapter.adapt_description(
-            node["description"], emotion_intensity=node["default_emotion"]
+            node["description"],
+            emotion_intensity=node.get("default_emotion", 3)
         )
 
+        # Registrar transición en el estado general
         transition = {
             "timestamp": datetime.utcnow().isoformat(),
-            "node_id": node["id"],
-            "scene_transition": node["type"],
+            "node_id": node.get("id", "unknown"),
+            "scene_transition": node.get("type", "narrative"),
             "description": description,
-            "theme": node["theme"]
+            "theme": node.get("theme", "indefinido")
         }
-
         self.state_service.update_story_flow(transition)
 
-        # Registrar en memoria narrativa
+        # Registrar en memoria dramática
         try:
             self.memory_manager.record_event(
                 description=description,
-                theme=node["theme"],
-                emotion_level=node["default_emotion"],
+                theme=node.get("theme", "indefinido"),
+                emotion_level=node.get("default_emotion", 3),
                 stage=self.dramatic_curve.get_stage()
             )
         except Exception as e:
             print(f"[WARN] Error registrando evento en memoria: {e}")
+
+        # Aplicar estilo narrativo emergente
+        try:
+            persona = NarratorPersona()
+            description = persona.apply_persona(description)
+        except Exception as e:
+            print(f"[WARN] Error aplicando estilo narrativo: {e}")
 
         return description
