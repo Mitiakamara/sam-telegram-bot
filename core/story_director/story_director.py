@@ -4,16 +4,9 @@ StoryDirector
 -------------
 Motor de decisiones narrativas adaptativas.
 
-Su función es dirigir el flujo de la historia, eligiendo qué tipo de
-evento o transición narrativa ocurre a continuación según:
-
-- La emoción actual (proveniente del EmotionService o del SceneManager)
-- La curva dramática (ritmo: inicio → ascenso → clímax → caída → epílogo)
-- Los temas recurrentes (esperanza, traición, redención, etc.)
-
-👉 Nota importante:
-Ya no importa directamente SceneManager para evitar el error de
-importación circular. Recibe una referencia a scene_manager dinámicamente.
+Ahora incluye integración con MemoryManager, lo que permite registrar
+cada transición narrativa para que S.A.M. recuerde los eventos, temas
+y emociones predominantes de la historia.
 """
 
 import random
@@ -24,6 +17,7 @@ from core.scene_manager.tone_adapter import ToneAdapter
 from core.services.state_service import StateService
 from core.story_director.theme_tracker import ThemeTracker
 from core.story_director.dramatic_curve import DramaticCurve
+from core.story_director.memory_manager import MemoryManager
 
 
 class StoryDirector:
@@ -43,6 +37,7 @@ class StoryDirector:
         self.state_service = StateService()
         self.theme_tracker = ThemeTracker()
         self.dramatic_curve = DramaticCurve()
+        self.memory_manager = MemoryManager()
         self.narrative_nodes = self._load_narrative_nodes()
 
     # ==========================================================
@@ -95,7 +90,8 @@ class StoryDirector:
     def generate_transition(self):
         """
         Crea una transición narrativa hacia el siguiente nodo.
-        Integra emoción, tono y coherencia con la historia.
+        Integra emoción, tono y coherencia con la historia,
+        y registra el evento en la memoria dramática.
         """
         node = self.select_next_node()
 
@@ -115,5 +111,19 @@ class StoryDirector:
             "theme": node["theme"]
         }
 
+        # Registrar en el flujo general del estado
         self.state_service.update_story_flow(transition)
+
+        # 🔹 Registrar evento en memoria dramática
+        try:
+            self.memory_manager.record_event(
+                description=description,
+                theme=node["theme"],
+                emotion_level=node["default_emotion"],
+                stage=self.dramatic_curve.get_stage()
+            )
+        except Exception as e:
+            # No interrumpir el flujo narrativo si hay error al guardar
+            print(f"[WARN] Error registrando evento en memoria: {e}")
+
         return description
