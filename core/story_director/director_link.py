@@ -1,72 +1,113 @@
+# sam-telegram-bot/core/story_director/director_link.py
 """
 DirectorLink
 -------------
-Conecta los resultados del motor de juego (GameAPI) con el StoryDirector.
-Permite que la narrativa se adapte a las acciones, tiradas o eventos
-registrados por los jugadores.
+Puente entre el motor de juego (GameService) y el StoryDirector.
 
-Ejemplo:
-- Un éxito crítico => intensifica la curva dramática y genera tono heroico.
-- Un fallo grave => añade tensión y elige un nodo de traición o peligro.
-- Descubrimiento o evento de descanso => activa nodo de calma o reflexión.
+Interpreta las respuestas del juego (acciones, resultados, eventos)
+y decide cómo deben afectar la narrativa y el tono global de campaña.
 """
 
-from core.story_director.story_director import StoryDirector
-from core.services.state_service import StateService
-from core.services.emotion_service import EmotionService
+from core.renderer import render
 
 
 class DirectorLink:
-    def __init__(self, story_director: StoryDirector):
+    """
+    Interpreta resultados del GameService y los conecta con el StoryDirector.
+    - Extrae emociones o temas de los resultados.
+    - Informa al MoodManager para ajustar el tono global.
+    - Devuelve texto narrativo adaptado.
+    """
+
+    def __init__(self, story_director):
         self.story_director = story_director
-        self.state_service = StateService()
-        self.emotion_service = EmotionService()
+        # MoodManager opcional (si StoryDirector lo posee)
+        self.mood_manager = getattr(story_director, "mood_manager", None)
 
     # ==========================================================
-    # 🔹 PROCESAMIENTO DE RESULTADOS DE JUEGO
+    # 🔹 PROCESAR RESULTADOS DEL MOTOR DE JUEGO
     # ==========================================================
-    async def process_game_result(self, game_result: dict) -> str:
+    async def process_game_result(self, game_result: dict):
         """
-        Recibe la respuesta JSON del GameAPI después de una acción del jugador
-        y traduce su impacto narrativo para el StoryDirector.
+        Recibe un resultado del GameService, analiza el contexto narrativo
+        y adapta el texto según el tono actual.
         """
-        if not game_result:
-            return "El eco de tus acciones se desvanece sin respuesta del mundo."
+        try:
+            # Estructura esperada de game_result:
+            # {
+            #   "action": "attack goblin",
+            #   "outcome": "success",
+            #   "emotion": "triumph",
+            #   "description": "El golpe atraviesa la defensa del enemigo...",
+            #   "event": {...} (opcional)
+            # }
 
-        text_output = game_result.get("result", "")
-        event_info = game_result.get("event", {})
-        tone_modifier = 0
+            action = game_result.get("action", "")
+            outcome = game_result.get("outcome", "")
+            emotion = game_result.get("emotion", "neutral")
+            description = game_result.get("description", "")
+            event = game_result.get("event", None)
 
-        # 1️⃣ Analizar éxito o fracaso
-        success = game_result.get("success")
-        if success is True:
-            tone_modifier -= 1  # tono más esperanzador
-        elif success is False:
-            tone_modifier += 1  # tono más tenso o desesperado
+            # --------------------------------------------------
+            # 🎭 Ajustar el clima narrativo
+            # --------------------------------------------------
+            if self.mood_manager:
+                try:
+                    # Ajuste tonal automático según emoción detectada
+                    delta = self._emotion_to_delta(emotion)
+                    self.mood_manager.adjust_from_feedback(emotion, delta)
+                except Exception:
+                    pass
 
-        # 2️⃣ Analizar tipo de evento
-        if event_info:
-            event_type = event_info.get("event_type", "").lower()
-            if "combate" in event_type:
-                tone_modifier += 1
-            elif "descubrimiento" in event_type:
-                tone_modifier -= 1
-            elif "traicion" in event_type:
-                tone_modifier += 2
+            # --------------------------------------------------
+            # ✍️ Generar texto adaptado según tono
+            # --------------------------------------------------
+            adapted_text = description
+            if hasattr(self.story_director, "tone_adapter"):
+                adapted_text = self.story_director.tone_adapter.adapt_tone(
+                    description=description,
+                    emotion=emotion,
+                    intensity=getattr(self.mood_manager, "mood_intensity", 0.5)
+                    if self.mood_manager else 0.5,
+                    genre=getattr(self.mood_manager, "genre_profile", "heroic")
+                    if self.mood_manager else "heroic"
+                )
 
-        # 3️⃣ Determinar nueva emoción global
-        current_state = self.state_service.load_state()
-        base_emotion = current_state.get("emotion_intensity", 3)
-        new_emotion = max(1, min(5, base_emotion + tone_modifier))
+            # --------------------------------------------------
+            # 🔮 Procesar evento especial
+            # --------------------------------------------------
+            event_text = ""
+            if event:
+                title = event.get("event_title", "Evento")
+                e_type = event.get("event_type", "general")
+                narration = event.get("event_narration", "")
+                event_text = f"\n\n🔮 *{title}* ({e_type.title()}):\n{narration}"
 
-        # 4️⃣ Actualizar estado emocional
-        self.state_service.update_emotion_level(new_emotion)
+            # Texto final
+            narrative = f"{adapted_text}{event_text}"
 
-        # 5️⃣ Generar transición adaptativa
-        transition_text = self.story_director.generate_transition()
+            return render(narrative)
 
-        return (
-            f"{text_output}\n\n"
-            f"🧭 *Cambio narrativo:*\n{transition_text}\n\n"
-            f"💫 Intensidad emocional actual: {new_emotion}"
-        )
+        except Exception as e:
+            return render(f"[Error en DirectorLink] No se pudo procesar el resultado del juego: {e}")
+
+    # ==========================================================
+    # 🔹 MAPEO DE EMOCIONES → AJUSTE DE TONO
+    # ==========================================================
+    def _emotion_to_delta(self, emotion: str) -> float:
+        """
+        Convierte una emoción del resultado del juego en un ajuste
+        de intensidad tonal para el MoodManager.
+        """
+        mapping = {
+            "triumph": +0.3,
+            "hope": +0.2,
+            "fear": +0.2,
+            "tension": +0.1,
+            "sadness": -0.2,
+            "loss": -0.3,
+            "anger": +0.1,
+            "calm": -0.1,
+            "neutral": 0.0
+        }
+        return mapping.get(emotion.lower(), 0.0)
