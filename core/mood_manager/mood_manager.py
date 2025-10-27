@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from statistics import mean
 
+
 # ================================================================
 # 🎭 Mood Manager – Gestor de tono global de campaña
 # ================================================================
@@ -80,7 +81,8 @@ class MoodManager:
         dominant = self._most_common(emotions)
         avg_intensity = mean(intensities)
 
-        self.mood_state = self._map_emotion_to_mood(dominant)
+        mapped_mood = self._map_emotion_to_mood(dominant)
+        self.mood_state = mapped_mood
         self.mood_intensity = round(avg_intensity, 2)
         self.last_update = datetime.utcnow().isoformat()
 
@@ -98,25 +100,61 @@ class MoodManager:
     def _most_common(self, items):
         return max(set(items), key=items.count) if items else "neutral"
 
+    # ------------------------------------------------------------
+    # 🧠 TRADUCTOR DE EMOCIONES → MOOD GLOBAL
+    # ------------------------------------------------------------
+
     def _map_emotion_to_mood(self, emotion):
         """
-        Traduce una emoción de escena (e.g., 'fear', 'hope', 'sadness')
-        a un estado de mood más abstracto de campaña.
+        Traduce una emoción detectada (de escena o evento)
+        a una categoría de mood coherente con emotional_scale.json.
         """
-        mapping = {
+        emotion = (emotion or "").lower().strip()
+
+        emotion_map = {
+            # Positivos / heroicos
             "joy": "hopeful",
             "hope": "hopeful",
             "triumph": "triumphant",
-            "fear": "tense",
-            "sadness": "melancholic",
-            "anger": "grim",
-            "curiosity": "mystical",
+            "victory": "triumphant",
+            "confidence": "hopeful",
+            "love": "romantic",
+
+            # Neutrales / contemplativos
+            "curiosity": "curious",
+            "wonder": "curious",
+            "discovery": "curious",
             "serenity": "serene",
-            "anticipation": "tense",
+            "peace": "serene",
+
+            # Negativos / tensos
+            "fear": "fearful",
+            "terror": "fearful",
+            "anger": "grim",
+            "rage": "grim",
+            "hatred": "grim",
             "conflict": "chaotic",
-            "neutral": "neutral"
+            "tension": "tense",
+            "stress": "tense",
+
+            # Tristes / melancólicos
+            "sadness": "melancholic",
+            "melancholy": "melancholic",
+            "loss": "melancholic",
+            "grief": "melancholic",
+
+            # Espirituales / místicos
+            "mystery": "mystical",
+            "magic": "mystical",
+            "dream": "mystical",
+            "ritual": "mystical",
+
+            # Catch-all
+            "neutral": "serene",
+            "unknown": "serene"
         }
-        return mapping.get(emotion.lower(), "neutral")
+
+        return emotion_map.get(emotion, "neutral")
 
     # ------------------------------------------------------------
     # ⚖️ AJUSTE DE TONO Y NORMALIZACIÓN
@@ -171,10 +209,10 @@ class MoodManager:
         return self.mood_state
 
     # ------------------------------------------------------------
-    # 📊 RETROALIMENTACIÓN DESDE EL STORY DIRECTOR
+    # 💬 RETROALIMENTACIÓN DESDE JUGADORES O STORY DIRECTOR
     # ------------------------------------------------------------
 
-    def adjust_from_feedback(self, player_emotion: str, delta: float):
+    def adjust_from_feedback(self, player_emotion: str, delta: float = 0.1):
         """
         Ajusta el tono según feedback emocional directo del jugador o del Story Director.
         Ej: player_emotion="bored", delta=+0.3  -> sube la intensidad.
@@ -183,22 +221,15 @@ class MoodManager:
             self.mood_intensity = max(0.3, self.mood_intensity - 0.2)
         elif player_emotion in ["excited", "immersed"]:
             self.mood_intensity = min(1.0, self.mood_intensity + 0.2)
+        elif player_emotion in ["fear", "tense"]:
+            self.mood_intensity = min(1.0, self.mood_intensity + 0.1)
+            self.mood_state = "tense"
+        elif player_emotion in ["sad", "melancholic"]:
+            self.mood_intensity = max(0.2, self.mood_intensity - 0.1)
+            self.mood_state = "melancholic"
         else:
             self.mood_intensity = max(0, min(1, self.mood_intensity + delta))
 
+        self.last_update = datetime.utcnow().isoformat()
         self._save_game_state()
         return self.mood_intensity
-
-# ================================================================
-# ✅ Uso ejemplo (silencioso)
-# ================================================================
-
-if __name__ == "__main__":
-    mm = MoodManager("data/game_state.json")
-    scenes = [
-        {"scene_id": "A01", "emotion": "fear", "emotion_intensity": 0.8},
-        {"scene_id": "A02", "emotion": "sadness", "emotion_intensity": 0.6}
-    ]
-    mood, intensity = mm.analyze_recent_scenes(scenes)
-    print("Mood global:", mood, "| Intensidad:", intensity)
-    print("Transición sugerida:", mm.normalize_mood())
