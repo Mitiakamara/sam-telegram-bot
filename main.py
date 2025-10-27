@@ -66,12 +66,13 @@ async def api_request(method: str, endpoint: str, json_data: dict | None = None)
             return None
 
 # ================================================================
-# 🎲 COMANDOS DE PARTY (con hotfix /join)
+# 🎲 COMANDOS DE PARTY (con hotfix y narración automática)
 # ================================================================
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Permite que un jugador se una al grupo.
     Crea automáticamente la party si no existe o si el GameAPI devuelve error.
+    Además, inicia una narración introductoria cuando la party se crea por primera vez.
     """
     player_name = update.effective_user.first_name
     user_id = update.effective_user.id
@@ -79,11 +80,13 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Intentar unirse a la party vía GameAPI
         result = await api_request("POST", "/party/join", {"player": player_name})
-        
-        # Si la API no responde o devuelve error, intentar crear una party nueva
+        new_party_created = False
+
+        # Si la API no responde o devuelve error, crear una nueva party
         if not result:
+            new_party_created = True
             await update.message.reply_text(
-                f"⚠️ El grupo parecía vacío, así que S.A.M. crea una nueva fogata para los aventureros..."
+                "⚠️ El grupo parecía vacío... S.A.M. aviva una nueva fogata en medio de la noche."
             )
             _ = await api_request("POST", "/party/reset", {})
             _ = await api_request("POST", "/party/join", {"player": player_name})
@@ -106,6 +109,12 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"👥 *Grupo actual:*\n{members}", parse_mode="Markdown"
             )
+
+        # 🌄 Narración de introducción si la party fue creada por primera vez
+        if new_party_created:
+            await update.message.reply_text("🌄 *Inicio de la aventura...*", parse_mode="Markdown")
+            intro_message = await orchestrator.start_new_session()
+            await update.message.reply_text(intro_message, parse_mode="Markdown")
 
     except Exception as e:
         await update.message.reply_text(
