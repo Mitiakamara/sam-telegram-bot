@@ -34,7 +34,7 @@ logger = logging.getLogger("SAM.Bot")
 # ================================================================
 narrator = SAMNarrator()
 party_events = PartyEventSystem(narrator=narrator)
-orchestrator = Orchestrator()  # 🔗 Orquesta GameAPI, SceneManager y StoryDirector
+orchestrator = Orchestrator()  # 🔗 Orquesta GameAPI, SceneManager y StoryDirector (Mood Manager integrado a través del Story Director)
 
 # ================================================================
 # 🧩 UTILIDADES
@@ -65,6 +65,26 @@ async def api_request(method: str, endpoint: str, json_data: dict | None = None)
         except Exception as e:
             logger.error(f"❌ Error en request {endpoint}: {e}")
             return None
+
+# ------------------------------------------------
+# 🔎 Utilidad: imprime estado tonal si está disponible
+# ------------------------------------------------
+async def maybe_reply_mood(update: Update, prefix: str = ""):
+    """
+    Si el Orchestrator expone get_current_mood(), envía un breve estado tonal.
+    """
+    try:
+        if hasattr(orchestrator, "get_current_mood"):
+            mood = orchestrator.get_current_mood()
+            if isinstance(mood, dict) and mood.get("mood_state") is not None:
+                text = (
+                    f"{prefix}🌡️ *Estado tonal:* `{mood['mood_state']}` "
+                    f"(intensidad {mood.get('mood_intensity', '?')}) · "
+                    f"género: `{mood.get('genre_profile', '?')}`"
+                )
+                await update.message.reply_text(text, parse_mode="Markdown")
+    except Exception as e:
+        logger.warning(f"No se pudo obtener mood actual: {e}")
 
 # ================================================================
 # 🎲 COMANDOS DE PARTY (con hotfix + narración automática)
@@ -116,6 +136,8 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🌄 *Inicio de la aventura...*", parse_mode="Markdown")
             intro_message = await orchestrator.start_new_session()
             await update.message.reply_text(intro_message, parse_mode="Markdown")
+            # Tras iniciar sesión nueva, intenta mostrar clima narrativo inicial
+            await maybe_reply_mood(update, prefix="")
 
     except Exception as e:
         await update.message.reply_text(
@@ -186,6 +208,8 @@ async def continue_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         message = await orchestrator.handle_continue(player_id)
         await update.message.reply_text(message, parse_mode="Markdown")
+        # Después de continuar, intenta mostrar el clima narrativo actualizado
+        await maybe_reply_mood(update, prefix="")
     except Exception as e:
         logger.error(f"Error en /continue: {e}")
         await update.message.reply_text("⚠️ No se pudo continuar la historia en este momento.")
@@ -199,8 +223,50 @@ async def recap_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(recap, parse_mode="Markdown")
 
 # ================================================================
+# 🌡️ COMANDO /MOOD – Estado tonal global (Mood Manager)
+# ================================================================
+async def show_mood(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Muestra el clima emocional global de la campaña (vía Story Director / Mood Manager).
+    Defensivo: si el Orchestrator no lo implementa aún, no rompe nada.
+    """
+    try:
+        if hasattr(orchestrator, "get_current_mood"):
+            mood = orchestrator.get_current_mood()
+            if isinstance(mood, dict) and mood.get("mood_state") is not None:
+                await update.message.reply_text(
+                    f"🌡️ *Estado tonal global:*\n"
+                    f"- Mood: `{mood['mood_state']}`\n"
+                    f"- Intensidad: `{mood.get('mood_intensity', '?')}`\n"
+                    f"- Género base: `{mood.get('genre_profile', '?')}`",
+                    parse_mode="Markdown"
+                )
+                return
+        await update.message.reply_text("ℹ️ El estado tonal no está disponible en este momento.")
+    except Exception as e:
+        logger.error(f"Error en /mood: {e}")
+        await update.message.reply_text("⚠️ No se pudo obtener el clima tonal.")
+
+# ================================================================
 # 💬 CONVERSACIÓN NATURAL (acciones y narrativa adaptativa)
 # ================================================================
+def detect_player_emotion(text: str) -> tuple[str, float] | None:
+    """
+    Detección muy sencilla de emociones en el texto libre del jugador.
+    Devuelve (label, delta_intensity) o None si no hay match.
+    """
+    t = text.lower()
+    if any(w in t for w in ["aburrido", "tedioso", "meh", "zzz"]):
+        return ("bored", -0.2)
+    if any(w in t for w in ["wow", "increíble", "épico", "genial", "brutal", "vamos"]):
+        return ("excited", +0.3)
+    if any(w in t for w in ["miedo", "terror", "angustia", "tenso", "tensión"]):
+        return ("fear", +0.2)
+    if any(w in t for w in ["triste", "tristeza", "deprimido", "melancólico"]):
+        return ("sad", -0.1)
+    return None
+
+
 async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Interpreta mensajes sin comando como acciones o diálogos, o los envía al motor narrativo."""
     player_name = update.effective_user.first_name
@@ -214,6 +280,7 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if lowered in ["continuar", "seguir", "avanzar"]:
         message = await orchestrator.handle_continue(update.effective_user.id)
         await update.message.reply_text(message, parse_mode="Markdown")
+        await maybe_reply_mood(update, prefix="")
         return
 
     # Detección de intención
@@ -236,6 +303,7 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     narration = result["result"]
     await update.message.reply_text(narration)
 
+    # Evento aleatorio si viene de la API
     if "event" in result:
         event = result["event"]
         event_text = (
@@ -244,6 +312,21 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"\n\n{event['event_narration']}"
         )
         await update.message.reply_text(event_text, parse_mode="Markdown")
+
+    # 🧠 Feedback emocional → Mood Manager (si Orchestrator lo soporta)
+    try:
+        emo = detect_player_emotion(text)
+        if emo and hasattr(orchestrator, "apply_feedback"):
+            label, delta = emo
+            # Llamada defensiva: no rompas si el método no existe o cambia firma
+            try:
+                orchestrator.apply_feedback(label, delta)
+                await maybe_reply_mood(update, prefix="")
+            except TypeError:
+                orchestrator.apply_feedback(label)  # fallback (por si delta no está soportado)
+                await maybe_reply_mood(update, prefix="")
+    except Exception as e:
+        logger.debug(f"No se pudo aplicar feedback emocional: {e}")
 
 # ================================================================
 # 🚀 INICIO DEL BOT
@@ -259,11 +342,12 @@ def main():
     app.add_handler(CommandHandler("resetparty", reset_party))
     app.add_handler(CommandHandler("continue", continue_story))  # 🧭 Motor narrativo adaptativo
     app.add_handler(CommandHandler("recap", recap_story))        # 🧠 Nueva recapitulación
+    app.add_handler(CommandHandler("mood", show_mood))           # 🌡️ Consulta del clima tonal
 
     # Modo conversacional
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_text))
 
-    logger.info("🤖 S.A.M. conectado y escuchando en modo narrativo + eventos + StoryDirector + Memoria.")
+    logger.info("🤖 S.A.M. conectado y escuchando en modo narrativo + eventos + StoryDirector + Memoria + Mood.")
     app.run_polling()
 
 
