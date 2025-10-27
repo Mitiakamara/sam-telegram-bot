@@ -1,11 +1,11 @@
 import random
 import json
 from datetime import datetime
-from core.scene_manager.scene_manager import SceneManager
 from core.scene_manager.tone_adapter import ToneAdapter
 from core.services.state_service import StateService
 from core.story_director.theme_tracker import ThemeTracker
 from core.story_director.dramatic_curve import DramaticCurve
+
 
 class StoryDirector:
     """
