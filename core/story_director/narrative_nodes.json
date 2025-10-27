@@ -9,6 +9,15 @@
     "description": "El grupo descubre una pista inesperada: grabados antiguos narran la caída de un reino olvidado. Una sensación de destino los envuelve."
   },
   {
+    "id": "intro_discovery_02",
+    "type": "exploration",
+    "theme": "curiosidad",
+    "stages": ["inicio"],
+    "emotion_range": [2, 3, 4],
+    "default_emotion": 3,
+    "description": "Una suave brisa guía a los aventureros hacia un valle oculto. Entre la neblina se vislumbran ruinas que susurran historias de tiempos remotos."
+  },
+  {
     "id": "conflict_rising_01",
     "type": "conflicto",
     "theme": "traición",
@@ -18,12 +27,66 @@
     "description": "Las tensiones se desbordan. Un aliado revela sus verdaderas intenciones, y el grupo debe decidir si enfrentarlo o apaciguar la tormenta."
   },
   {
-    "id": "resolution_calm_01",
-    "type": "resolucion",
+    "id": "conflict_rising_02",
+    "type": "combate",
+    "theme": "supervivencia",
+    "stages": ["ascenso", "climax"],
+    "emotion_range": [4, 5],
+    "default_emotion": 5,
+    "description": "Las sombras cobran forma a su alrededor. De la penumbra emergen enemigos jurados, y el eco del acero marca el inicio de la batalla."
+  },
+  {
+    "id": "revelation_twist_01",
+    "type": "revelacion",
+    "theme": "engaño",
+    "stages": ["climax", "caida"],
+    "emotion_range": [3, 4],
+    "default_emotion": 4,
+    "description": "La verdad sale a la luz: aquello que creían una bendición era en realidad una trampa cuidadosamente tendida. El eco de la revelación sacude sus convicciones."
+  },
+  {
+    "id": "revelation_twist_02",
+    "type": "decision",
+    "theme": "sacrificio",
+    "stages": ["climax"],
+    "emotion_range": [4, 5],
+    "default_emotion": 5,
+    "description": "El dilema es claro: salvar a uno y condenar a muchos, o renunciar a la esperanza por un bien mayor. La elección pesará en sus almas."
+  },
+  {
+    "id": "rest_calm_01",
+    "type": "descanso",
     "theme": "esperanza",
     "stages": ["caida", "epilogo"],
     "emotion_range": [1, 2, 3],
     "default_emotion": 2,
-    "description": "Tras la tormenta, la calma regresa. Las heridas sanan, pero las cicatrices permanecen como recordatorio de lo vivido."
+    "description": "La calma regresa tras la tempestad. El grupo se reúne junto al fuego, compartiendo palabras y silencios que curan más que cualquier poción."
+  },
+  {
+    "id": "rest_calm_02",
+    "type": "interludio",
+    "theme": "reflexion",
+    "stages": ["caida"],
+    "emotion_range": [1, 2, 3],
+    "default_emotion": 2,
+    "description": "Bajo el manto estrellado, los aventureros reflexionan sobre lo vivido. Las heridas físicas sanan, pero las del alma tardarán más en cerrarse."
+  },
+  {
+    "id": "closure_end_01",
+    "type": "resolucion",
+    "theme": "redencion",
+    "stages": ["epilogo"],
+    "emotion_range": [2, 3, 4],
+    "default_emotion": 3,
+    "description": "El viaje llega a su fin. Lo perdido no puede recuperarse, pero lo aprendido quedará grabado en sus corazones como una llama que no se apaga."
+  },
+  {
+    "id": "closure_end_02",
+    "type": "resolucion",
+    "theme": "nuevo_comienzo",
+    "stages": ["epilogo"],
+    "emotion_range": [2, 3],
+    "default_emotion": 3,
+    "description": "Cuando el amanecer rompe el horizonte, el grupo comprende que cada final es solo el preludio de otra aventura."
   }
 ]
