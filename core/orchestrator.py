@@ -1,4 +1,3 @@
-# sam-telegram-bot/core/orchestrator.py
 """
 Orchestrator
 ------------
@@ -6,7 +5,7 @@ Control central de la narrativa. Coordina la comunicación entre:
 
 - GameService (acciones de jugador)
 - SceneManager (gestión de escenas)
-- StoryDirector (motor narrativo adaptativo)
+- StoryDirector (motor narrativo adaptativo + Mood Manager)
 - DirectorLink (puente entre resultados de juego y decisiones narrativas)
 
 El objetivo es mantener una historia coherente y emocionalmente dinámica.
@@ -32,6 +31,9 @@ class Orchestrator:
         self.state_service = StateService()
         self.story_director = self.scene_manager.story_director  # referencia directa
         self.director_link = DirectorLink(self.story_director)
+
+        # 🔹 Intentar conectar con MoodManager si está disponible
+        self.mood_manager = getattr(self.story_director, "mood_manager", None)
 
     # ==========================================================
     # 🔹 ACCIÓN PRINCIPAL: PROCESAR MENSAJES DEL JUGADOR
@@ -63,6 +65,10 @@ class Orchestrator:
             scene_text = f"{active_scene['description_adapted']}\n\n{game_response}"
 
         self.state_service.save_scene(active_scene)
+
+        # 🔄 Intentar actualizar el mood global tras la acción
+        await self._auto_update_mood()
+
         return render(scene_text)
 
     # ==========================================================
@@ -86,6 +92,10 @@ class Orchestrator:
             f"🎭 *Nueva escena:* {next_scene['title']}\n"
             f"📖 {next_scene['description_adapted']}"
         )
+
+        # 🔄 Actualizar mood tras el avance narrativo
+        await self._auto_update_mood()
+
         return render(message)
 
     # ==========================================================
@@ -104,6 +114,14 @@ class Orchestrator:
             ),
             scene_type="exploration"
         )
+
+        # Reiniciar el estado emocional de campaña si MoodManager está activo
+        if self.mood_manager:
+            self.mood_manager.mood_state = "neutral"
+            self.mood_manager.mood_intensity = 0.5
+            self.mood_manager.history.clear()
+            self.mood_manager._save_game_state()
+
         return render(intro_scene["description_adapted"])
 
     # ==========================================================
@@ -112,3 +130,53 @@ class Orchestrator:
     async def get_story_summary(self):
         """Devuelve el resumen narrativo del estado actual."""
         return render(self.scene_manager.summarize_scene())
+
+    # ==========================================================
+    # 🔹 MOOD MANAGER – ESTADO TONAL GLOBAL
+    # ==========================================================
+    def get_current_mood(self):
+        """
+        Devuelve el estado tonal global actual del Mood Manager,
+        si el Story Director lo tiene activo.
+        """
+        if not self.mood_manager:
+            return {"mood_state": "neutral", "mood_intensity": 0.5, "genre_profile": "unknown"}
+
+        return {
+            "mood_state": getattr(self.mood_manager, "mood_state", "neutral"),
+            "mood_intensity": getattr(self.mood_manager, "mood_intensity", 0.5),
+            "genre_profile": getattr(self.mood_manager, "genre_profile", "heroic"),
+            "last_update": getattr(self.mood_manager, "last_update", None)
+        }
+
+    def apply_feedback(self, player_emotion: str, delta: float = 0.1):
+        """
+        Ajusta la intensidad tonal global según la emoción detectada del jugador
+        o del sistema. Si no hay MoodManager, no hace nada.
+        """
+        if not self.mood_manager:
+            return None
+
+        try:
+            new_intensity = self.mood_manager.adjust_from_feedback(player_emotion, delta)
+            return new_intensity
+        except Exception:
+            return None
+
+    # ==========================================================
+    # 🔹 FUNCIONES INTERNAS
+    # ==========================================================
+    async def _auto_update_mood(self):
+        """
+        Llama al análisis del mood global tras eventos clave (acción o transición).
+        Es asíncrono para no bloquear el flujo principal.
+        """
+        if not self.story_director or not hasattr(self.story_director, "_update_mood"):
+            return
+
+        try:
+            result = self.story_director._update_mood()
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception:
+            pass
