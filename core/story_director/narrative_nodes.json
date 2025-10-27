@@ -1,0 +1,29 @@
+[
+  {
+    "id": "intro_discovery_01",
+    "type": "discovery",
+    "theme": "misterio",
+    "stages": ["inicio", "ascenso"],
+    "emotion_range": [2, 3],
+    "default_emotion": 3,
+    "description": "El grupo descubre una pista inesperada: grabados antiguos narran la caída de un reino olvidado. Una sensación de destino los envuelve."
+  },
+  {
+    "id": "conflict_rising_01",
+    "type": "conflicto",
+    "theme": "traición",
+    "stages": ["ascenso", "climax"],
+    "emotion_range": [3, 4, 5],
+    "default_emotion": 4,
+    "description": "Las tensiones se desbordan. Un aliado revela sus verdaderas intenciones, y el grupo debe decidir si enfrentarlo o apaciguar la tormenta."
+  },
+  {
+    "id": "resolution_calm_01",
+    "type": "resolucion",
+    "theme": "esperanza",
+    "stages": ["caida", "epilogo"],
+    "emotion_range": [1, 2, 3],
+    "default_emotion": 2,
+    "description": "Tras la tormenta, la calma regresa. Las heridas sanan, pero las cicatrices permanecen como recordatorio de lo vivido."
+  }
+]
