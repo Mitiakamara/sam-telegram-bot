@@ -2,11 +2,11 @@
 """
 StoryDirector
 -------------
-Motor de decisiones narrativas adaptativas.
+Motor de decisiones narrativas adaptativas con memoria dramática y
+reforzamiento temático.
 
-Ahora incluye integración con MemoryManager, lo que permite registrar
-cada transición narrativa para que S.A.M. recuerde los eventos, temas
-y emociones predominantes de la historia.
+Ahora S.A.M. puede detectar los temas recurrentes de la historia
+y decidir si desea reforzarlos o romperlos para mantener la tensión narrativa.
 """
 
 import random
@@ -21,17 +21,7 @@ from core.story_director.memory_manager import MemoryManager
 
 
 class StoryDirector:
-    """
-    Motor de decisiones narrativas adaptativas.
-    Supervisa la progresión emocional y temática del juego
-    para decidir el siguiente tipo de evento o escena.
-    """
-
     def __init__(self, scene_manager, tone_adapter: ToneAdapter):
-        """
-        scene_manager: referencia dinámica al SceneManager actual.
-        tone_adapter: responsable de adaptar el tono emocional del texto.
-        """
         self.scene_manager = scene_manager
         self.tone_adapter = tone_adapter
         self.state_service = StateService()
@@ -44,7 +34,6 @@ class StoryDirector:
     # 🔹 CARGA DE NODOS NARRATIVOS
     # ==========================================================
     def _load_narrative_nodes(self):
-        """Carga la base de nodos narrativos desde JSON."""
         try:
             with open("core/story_director/narrative_nodes.json", "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -52,15 +41,9 @@ class StoryDirector:
             return []
 
     # ==========================================================
-    # 🔹 ANÁLISIS DE CONTEXTO ACTUAL
+    # 🔹 ANÁLISIS DE CONTEXTO
     # ==========================================================
     def analyze_context(self):
-        """
-        Analiza el estado actual de la partida:
-        - Emoción activa
-        - Tema predominante
-        - Etapa dramática
-        """
         game_state = self.state_service.load_state()
         emotion_level = game_state.get("emotion_intensity", 3)
         current_theme = self.theme_tracker.detect_theme(game_state)
@@ -68,31 +51,60 @@ class StoryDirector:
         return emotion_level, current_theme, curve_stage
 
     # ==========================================================
-    # 🔹 SELECCIÓN DE NODO SIGUIENTE
+    # 🔹 SELECCIÓN DE NODO SIGUIENTE (con reforzamiento temático)
     # ==========================================================
     def select_next_node(self):
         """
-        Elige el siguiente evento narrativo basado en emoción, tema y curva.
+        Elige el siguiente nodo narrativo basado en emoción, tema y curva,
+        con influencia del tema recurrente guardado en memoria.
         """
         emotion_level, theme, stage = self.analyze_context()
+        recurrent_theme = self.memory_manager.get_recurrent_theme()
+        avg_emotion = self.memory_manager.get_average_emotion()
+
+        # Filtrar por etapa dramática y emoción
         candidates = [
             n for n in self.narrative_nodes
             if stage in n.get("stages", [])
             and emotion_level in n.get("emotion_range", [])
         ]
+
         if not candidates:
             return None
+
+        # 🔹 Reforzamiento temático adaptativo
+        weighted_nodes = []
+        for node in candidates:
+            weight = 1.0
+            node_theme = node.get("theme")
+
+            # Si el tema coincide con el recurrente → mayor peso (reforzar)
+            if recurrent_theme and node_theme == recurrent_theme:
+                weight *= 2.0
+
+            # Si el tema es opuesto (según curva emocional) → menor o mayor peso
+            if avg_emotion >= 4 and node.get("tone") == "dark":
+                weight *= 0.8  # Evitar excesiva tensión
+            elif avg_emotion <= 2 and node.get("tone") == "hopeful":
+                weight *= 1.5  # Reforzar alivio
+
+            weighted_nodes.append((node, weight))
+
+        # Selección ponderada
+        total_weight = sum(w for _, w in weighted_nodes)
+        rand = random.uniform(0, total_weight)
+        cumulative = 0
+        for node, weight in weighted_nodes:
+            cumulative += weight
+            if rand <= cumulative:
+                return node
+
         return random.choice(candidates)
 
     # ==========================================================
-    # 🔹 GENERACIÓN DE TRANSICIÓN NARRATIVA
+    # 🔹 GENERACIÓN DE TRANSICIÓN NARRATIVA (con registro en memoria)
     # ==========================================================
     def generate_transition(self):
-        """
-        Crea una transición narrativa hacia el siguiente nodo.
-        Integra emoción, tono y coherencia con la historia,
-        y registra el evento en la memoria dramática.
-        """
         node = self.select_next_node()
 
         if not node:
@@ -111,10 +123,9 @@ class StoryDirector:
             "theme": node["theme"]
         }
 
-        # Registrar en el flujo general del estado
         self.state_service.update_story_flow(transition)
 
-        # 🔹 Registrar evento en memoria dramática
+        # Registrar en memoria narrativa
         try:
             self.memory_manager.record_event(
                 description=description,
@@ -123,7 +134,6 @@ class StoryDirector:
                 stage=self.dramatic_curve.get_stage()
             )
         except Exception as e:
-            # No interrumpir el flujo narrativo si hay error al guardar
             print(f"[WARN] Error registrando evento en memoria: {e}")
 
         return description
