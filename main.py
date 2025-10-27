@@ -14,6 +14,7 @@ from telegram.ext import (
 
 from core.narrator import SAMNarrator
 from core.party_events import PartyEventSystem
+from core.orchestrator import Orchestrator  # 🧠 Nuevo: motor narrativo adaptativo
 
 # ================================================================
 # ⚙️ CONFIGURACIÓN INICIAL
@@ -32,6 +33,7 @@ logger = logging.getLogger("SAM.Bot")
 # ================================================================
 narrator = SAMNarrator()
 party_events = PartyEventSystem(narrator=narrator)
+orchestrator = Orchestrator()  # 🧩 Integración del StoryDirector y SceneManager
 
 # ================================================================
 # 🧩 UTILIDADES
@@ -42,6 +44,7 @@ def is_admin(user_id: int) -> bool:
         return False
     allowed = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip().isdigit()]
     return user_id in allowed
+
 
 async def api_request(method: str, endpoint: str, json_data: dict | None = None):
     """Realiza peticiones HTTP a la Game API."""
@@ -77,6 +80,7 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = party_events.on_player_join(party_size, player_name)
     await update.message.reply_text(msg or f"{player_name} se unió al grupo.")
 
+
 async def leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player_name = update.effective_user.first_name
     result = await api_request("POST", "/party/leave", {"player": player_name})
@@ -88,6 +92,7 @@ async def leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     party_size = len(party_data.get("party", [])) if party_data else 0
     msg = party_events.on_player_leave(party_size, player_name, kicked=False)
     await update.message.reply_text(msg or f"{player_name} dejó el grupo.")
+
 
 async def kick(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -105,6 +110,7 @@ async def kick(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = party_events.on_player_leave(party_size, target, kicked=True)
     await update.message.reply_text(msg or f"{target} fue expulsado del grupo.")
 
+
 async def list_party(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await api_request("GET", "/party")
     if not result or not result.get("party"):
@@ -113,6 +119,7 @@ async def list_party(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     members = "\n".join(f"• {name}" for name in result["party"])
     await update.message.reply_text(f"👥 *Grupo actual:*\n{members}", parse_mode="Markdown")
+
 
 async def reset_party(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -127,23 +134,45 @@ async def reset_party(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ No se pudo limpiar el grupo.")
 
 # ================================================================
-# 💬 CONVERSACIÓN NATURAL (acciones y eventos)
+# 🌌 NUEVO COMANDO /CONTINUE (StoryDirector Integration)
+# ================================================================
+async def continue_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cierra la escena actual y genera automáticamente la siguiente."""
+    player_id = update.effective_user.id
+    logger.info(f"Comando /continue ejecutado por {update.effective_user.username}")
+
+    try:
+        message = await orchestrator.handle_continue(player_id)
+        await update.message.reply_text(message, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error en /continue: {e}")
+        await update.message.reply_text("⚠️ No se pudo continuar la historia en este momento.")
+
+# ================================================================
+# 💬 CONVERSACIÓN NATURAL
 # ================================================================
 async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Interpreta mensajes sin comando como acciones o diálogos, y muestra eventos."""
+    """Interpreta mensajes sin comando como acciones o diálogos, o los envía al motor narrativo."""
     player_name = update.effective_user.first_name
     text = update.message.text.strip()
     if not text:
         return
 
-    # Detección de intención
     lowered = text.lower()
+
+    # 👉 Integración con StoryDirector: si el jugador escribe "continuar"
+    if lowered in ["continuar", "seguir", "avanzar"]:
+        message = await orchestrator.handle_continue(update.effective_user.id)
+        await update.message.reply_text(message, parse_mode="Markdown")
+        return
+
+    # Detección de intención
     if lowered.startswith(("digo", "hablo", "pregunto", "susurro")):
         mode = "dialogue"
     else:
         mode = "action"
 
-    # Enviar acción al motor de juego
+    # Enviar acción al motor de juego (GameAPI)
     result = await api_request("POST", "/game/action", {
         "player": player_name,
         "action": text,
@@ -154,11 +183,9 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🤔 S.A.M. no entiende lo que intentas hacer.")
         return
 
-    # Mostrar respuesta narrativa principal
     narration = result["result"]
     await update.message.reply_text(narration)
 
-    # Si ocurre un evento dinámico, mostrarlo aparte
     if "event" in result:
         event = result["event"]
         event_text = (
@@ -180,12 +207,14 @@ def main():
     app.add_handler(CommandHandler("kick", kick))
     app.add_handler(CommandHandler("party", list_party))
     app.add_handler(CommandHandler("resetparty", reset_party))
+    app.add_handler(CommandHandler("continue", continue_story))  # 🧭 Nuevo comando narrativo
 
     # Modo conversacional
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_text))
 
-    logger.info("🤖 S.A.M. conectado y escuchando en modo narrativo + eventos.")
+    logger.info("🤖 S.A.M. conectado y escuchando en modo narrativo + eventos + StoryDirector.")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
