@@ -14,7 +14,7 @@ from telegram.ext import (
 
 from core.narrator import SAMNarrator
 from core.party_events import PartyEventSystem
-from core.orchestrator import Orchestrator  # 🧠 Nuevo: motor narrativo adaptativo
+from core.orchestrator import Orchestrator  # 🧠 Motor narrativo adaptativo
 
 # ================================================================
 # ⚙️ CONFIGURACIÓN INICIAL
@@ -33,7 +33,7 @@ logger = logging.getLogger("SAM.Bot")
 # ================================================================
 narrator = SAMNarrator()
 party_events = PartyEventSystem(narrator=narrator)
-orchestrator = Orchestrator()  # 🧩 Integración del StoryDirector y SceneManager
+orchestrator = Orchestrator()  # 🔗 Orquesta GameAPI, SceneManager y StoryDirector
 
 # ================================================================
 # 🧩 UTILIDADES
@@ -66,19 +66,51 @@ async def api_request(method: str, endpoint: str, json_data: dict | None = None)
             return None
 
 # ================================================================
-# 🎲 COMANDOS DE PARTY
+# 🎲 COMANDOS DE PARTY (con hotfix /join)
 # ================================================================
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Permite que un jugador se una al grupo.
+    Crea automáticamente la party si no existe o si el GameAPI devuelve error.
+    """
     player_name = update.effective_user.first_name
-    result = await api_request("POST", "/party/join", {"player": player_name})
-    if not result:
-        await update.message.reply_text(f"⚠️ No se pudo unir a {player_name}.")
-        return
+    user_id = update.effective_user.id
 
-    party_data = await api_request("GET", "/party")
-    party_size = len(party_data.get("party", [])) if party_data else 1
-    msg = party_events.on_player_join(party_size, player_name)
-    await update.message.reply_text(msg or f"{player_name} se unió al grupo.")
+    try:
+        # Intentar unirse a la party vía GameAPI
+        result = await api_request("POST", "/party/join", {"player": player_name})
+        
+        # Si la API no responde o devuelve error, intentar crear una party nueva
+        if not result:
+            await update.message.reply_text(
+                f"⚠️ El grupo parecía vacío, así que S.A.M. crea una nueva fogata para los aventureros..."
+            )
+            _ = await api_request("POST", "/party/reset", {})
+            _ = await api_request("POST", "/party/join", {"player": player_name})
+            result = {"success": True}
+
+        # Obtener lista de miembros actualizada
+        party_data = await api_request("GET", "/party")
+        party_size = len(party_data.get("party", [])) if party_data else 1
+
+        # Mensaje narrativo usando PartyEventSystem (si existe)
+        msg = party_events.on_player_join(party_size, player_name)
+        if not msg:
+            msg = f"🧙‍♂️ {player_name} se une a la aventura."
+
+        await update.message.reply_text(msg)
+
+        # Mostrar estado del grupo si hay más miembros
+        if party_size > 1:
+            members = "\n".join(f"• {name}" for name in party_data["party"])
+            await update.message.reply_text(
+                f"👥 *Grupo actual:*\n{members}", parse_mode="Markdown"
+            )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"⚠️ No se pudo unir a {player_name}. S.A.M. murmura: «{e}»"
+        )
 
 
 async def leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,7 +166,7 @@ async def reset_party(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ No se pudo limpiar el grupo.")
 
 # ================================================================
-# 🌌 NUEVO COMANDO /CONTINUE (StoryDirector Integration)
+# 🌌 COMANDO /CONTINUE (StoryDirector Integration)
 # ================================================================
 async def continue_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cierra la escena actual y genera automáticamente la siguiente."""
@@ -149,7 +181,7 @@ async def continue_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ No se pudo continuar la historia en este momento.")
 
 # ================================================================
-# 💬 CONVERSACIÓN NATURAL
+# 💬 CONVERSACIÓN NATURAL (acciones y narrativa adaptativa)
 # ================================================================
 async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Interpreta mensajes sin comando como acciones o diálogos, o los envía al motor narrativo."""
@@ -207,7 +239,7 @@ def main():
     app.add_handler(CommandHandler("kick", kick))
     app.add_handler(CommandHandler("party", list_party))
     app.add_handler(CommandHandler("resetparty", reset_party))
-    app.add_handler(CommandHandler("continue", continue_story))  # 🧭 Nuevo comando narrativo
+    app.add_handler(CommandHandler("continue", continue_story))  # 🧭 Motor narrativo adaptativo
 
     # Modo conversacional
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_text))
