@@ -15,6 +15,7 @@ from telegram.ext import (
 from core.narrator import SAMNarrator
 from core.party_events import PartyEventSystem
 from core.orchestrator import Orchestrator  # 🧠 Motor narrativo adaptativo
+from core.story_director.recap_manager import RecapManager  # 🧩 Resumen narrativo dinámico
 
 # ================================================================
 # ⚙️ CONFIGURACIÓN INICIAL
@@ -66,7 +67,7 @@ async def api_request(method: str, endpoint: str, json_data: dict | None = None)
             return None
 
 # ================================================================
-# 🎲 COMANDOS DE PARTY (con hotfix y narración automática)
+# 🎲 COMANDOS DE PARTY (con hotfix + narración automática)
 # ================================================================
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -190,6 +191,14 @@ async def continue_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ No se pudo continuar la historia en este momento.")
 
 # ================================================================
+# 🧠 COMANDO /RECAP – Resumen narrativo dinámico
+# ================================================================
+async def recap_story(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Genera un resumen del viaje usando la memoria narrativa."""
+    recap = RecapManager().generate_recap()
+    await update.message.reply_text(recap, parse_mode="Markdown")
+
+# ================================================================
 # 💬 CONVERSACIÓN NATURAL (acciones y narrativa adaptativa)
 # ================================================================
 async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -249,11 +258,12 @@ def main():
     app.add_handler(CommandHandler("party", list_party))
     app.add_handler(CommandHandler("resetparty", reset_party))
     app.add_handler(CommandHandler("continue", continue_story))  # 🧭 Motor narrativo adaptativo
+    app.add_handler(CommandHandler("recap", recap_story))        # 🧠 Nueva recapitulación
 
     # Modo conversacional
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_text))
 
-    logger.info("🤖 S.A.M. conectado y escuchando en modo narrativo + eventos + StoryDirector.")
+    logger.info("🤖 S.A.M. conectado y escuchando en modo narrativo + eventos + StoryDirector + Memoria.")
     app.run_polling()
 
 
