@@ -1,162 +1,174 @@
 import os
 import json
+import uuid
 from datetime import datetime
-from core.tone_adapter.tone_adapter import ToneAdapter
-from core.services.state_service import StateService
-from core.services.emotion_service import EmotionService
+from typing import List, Optional
+
+# ================================================================
+# 🧩 Scene Manager
+# ================================================================
+# Administra las escenas activas de la sesión, sus transiciones y
+# el registro histórico de emociones (Fase 6.10).
+# ================================================================
+
+from core.emotion.emotional_tracker import log_scene, get_emotional_summary
 
 
+# ------------------------------------------------
+# 🧱 MODELO DE ESCENA
+# ------------------------------------------------
+class Scene:
+    def __init__(
+        self,
+        title: str,
+        description: str,
+        scene_type: str = "progress",
+        objectives: Optional[List[str]] = None,
+        npcs: Optional[List[str]] = None,
+        environment: Optional[dict] = None,
+        available_actions: Optional[List[str]] = None,
+    ):
+        self.scene_id = str(uuid.uuid4())
+        self.title = title
+        self.description = description
+        self.scene_type = scene_type
+        self.objectives = objectives or []
+        self.npcs = npcs or []
+        self.environment = environment or {
+            "lighting": "",
+            "weather": "",
+            "terrain": ""
+        }
+        self.available_actions = available_actions or []
+        self.status = "active"
+        self.emotion_intensity = 3
+        self.timestamp_start = datetime.utcnow().isoformat()
+        self.timestamp_end = None
+
+    def to_dict(self):
+        return {
+            "scene_id": self.scene_id,
+            "title": self.title,
+            "description": self.description,
+            "scene_type": self.scene_type,
+            "objectives": self.objectives,
+            "npcs": self.npcs,
+            "environment": self.environment,
+            "available_actions": self.available_actions,
+            "status": self.status,
+            "emotion_intensity": self.emotion_intensity,
+            "timestamp_start": self.timestamp_start,
+            "timestamp_end": self.timestamp_end,
+        }
+
+
+# ------------------------------------------------
+# 🎬 SCENE MANAGER
+# ------------------------------------------------
 class SceneManager:
-    """
-    Maneja las escenas narrativas activas, su persistencia y las transiciones.
-    Integra el StoryDirector y mantiene un historial de escenas completadas.
-    """
+    def __init__(self, data_path: str = "data"):
+        self.data_path = data_path
+        self.current_scene: Optional[Scene] = None
+        self.scenes_log: List[dict] = []
 
-    def __init__(self, base_path: str = "data/"):
-        self.base_path = base_path
-        self.state_service = StateService()
-        self.emotion_service = EmotionService()
-        self.tone_adapter = ToneAdapter()
-        self.history_path = os.path.join(base_path, "scenes_history.json")
+    # ------------------------------
+    # Crear una nueva escena
+    # ------------------------------
+    def create_scene(self, title: str, description: str, scene_type: str = "progress"):
+        self.current_scene = Scene(title=title, description=description, scene_type=scene_type)
+        print(f"\n🌅 Nueva escena creada: {self.current_scene.title}")
+        return self.current_scene
 
-        # 🔄 Importación diferida para evitar circular import
-        from core.story_director.story_director import StoryDirector
-        self.story_director = StoryDirector(self, self.tone_adapter)
+    # ------------------------------
+    # Obtener escena activa
+    # ------------------------------
+    def get_current_scene(self) -> Optional[Scene]:
+        return self.current_scene
 
-        # Crear archivo de historial si no existe
-        self._ensure_history_file()
-
-    # ==========================================================
-    # 📂 UTILIDADES INTERNAS
-    # ==========================================================
-    def _ensure_history_file(self):
-        """Crea el archivo de historial si no existe."""
-        os.makedirs(self.base_path, exist_ok=True)
-        if not os.path.exists(self.history_path):
-            with open(self.history_path, "w", encoding="utf-8") as f:
-                json.dump([], f, indent=2, ensure_ascii=False)
-
-    def _append_to_history(self, scene: dict):
-        """Agrega una escena cerrada al historial de campaña."""
-        try:
-            with open(self.history_path, "r", encoding="utf-8") as f:
-                history = json.load(f)
-        except Exception:
-            history = []
-
-        # No duplicar escenas con mismo ID
-        if not any(s.get("scene_id") == scene.get("scene_id") for s in history):
-            history.append(scene)
-            with open(self.history_path, "w", encoding="utf-8") as f:
-                json.dump(history, f, indent=2, ensure_ascii=False)
-
-    # ==========================================================
-    # 🎭 CREACIÓN DE ESCENAS
-    # ==========================================================
-    def create_scene(self, title, description, scene_type="exploration",
-                     objectives=None, npcs=None, environment=None):
-        """Crea una nueva escena narrativa y la guarda como activa."""
-        emotion_label, emotion_intensity = self.emotion_service.evaluate_emotion(description)
-
-        scene = {
-            "scene_id": datetime.utcnow().isoformat(),
-            "title": title,
-            "description": description,
-            "description_adapted": self.tone_adapter.adapt_tone(
-                description=description,
-                emotion=emotion_label,
-                intensity=emotion_intensity,
-                genre="heroic"
-            ),
-            "scene_type": scene_type,
-            "emotion": emotion_label,
-            "emotion_intensity": emotion_intensity,
-            "status": "active",
-            "objectives": objectives or [],
-            "npcs": npcs or [],
-            "environment": environment or {"lighting": "", "weather": "", "terrain": ""},
-            "available_actions": [],
-            "transitions": [],
-            "created_at": datetime.utcnow().isoformat()
-        }
-
-        self.state_service.save_scene(scene)
-        return scene
-
-    # ==========================================================
-    # 🎬 CIERRE Y TRANSICIÓN DE ESCENAS
-    # ==========================================================
-    def close_scene(self, resolution_text: str = ""):
+    # ------------------------------
+    # Cerrar la escena actual
+    # ------------------------------
+    def end_scene(self, tone_adapter, mood_manager, story_director, action_handler, renderer):
         """
-        Marca la escena actual como 'completed', guarda su estado
-        y genera automáticamente la siguiente transición narrativa.
+        Marca la escena actual como finalizada, registra su estado emocional
+        y la guarda en el historial mediante Emotional Tracker.
         """
-        current_scene = self.state_service.load_scene()
-        if not current_scene:
-            return "⚠️ No hay escena activa para cerrar."
+        if not self.current_scene:
+            print("[⚠️] No hay escena activa para cerrar.")
+            return None
 
-        current_scene["status"] = "completed"
-        current_scene["resolution"] = resolution_text
-        current_scene["ended_at"] = datetime.utcnow().isoformat()
-
-        # Analizar emoción final
-        emotion_label, emotion_intensity = self.emotion_service.evaluate_emotion(resolution_text)
-        current_scene["emotion"] = emotion_label
-        current_scene["emotion_intensity"] = emotion_intensity
-
-        # Guardar escena actual y añadir al historial
-        self.state_service.save_scene(current_scene)
-        self._append_to_history(current_scene)
-
-        # 🔸 Generar la transición adaptativa
+        scene = self.current_scene
         try:
-            transition_text = self.story_director.generate_transition()
+            # 1️⃣ Actualiza estado y tiempos
+            scene.status = "completed"
+            scene.timestamp_end = datetime.utcnow().isoformat()
+
+            # 2️⃣ Extrae información emocional y contextual
+            emotion_vector = tone_adapter.get_current_emotions() if hasattr(tone_adapter, "get_current_emotions") else {}
+            dominant_emotion = tone_adapter.get_dominant() if hasattr(tone_adapter, "get_dominant") else "neutral"
+            current_tone = getattr(mood_manager, "current_tone", "neutral")
+            outcome = getattr(story_director, "last_outcome", "mixed")
+            player_actions = getattr(action_handler, "get_last_actions", lambda: [])()
+            scene_summary = getattr(renderer, "get_last_summary", lambda: "")()
+
+            # 3️⃣ Registrar en Emotional Tracker
+            log_scene({
+                "scene_id": scene.scene_id,
+                "title": scene.title,
+                "scene_type": scene.scene_type,
+                "emotion_vector": emotion_vector,
+                "dominant_emotion": dominant_emotion,
+                "tone": current_tone,
+                "summary": scene_summary,
+                "player_actions": player_actions,
+                "outcome": outcome,
+            })
+
+            # 4️⃣ Registrar también en memoria local
+            self.scenes_log.append(scene.to_dict())
+            self._save_scenes()
+
+            # 5️⃣ Mostrar resumen en consola
+            summary = get_emotional_summary()
+            print(f"\n📘 Escena finalizada: {scene.title}")
+            print(f"   Dominante: {dominant_emotion} | Tono: {current_tone}")
+            print(f"   Tendencia global → {summary.get('tone_trend')} ({summary.get('dominant_emotion')})")
+
+            # 6️⃣ Reinicia la escena activa
+            self.current_scene = None
+            return scene
+
         except Exception as e:
-            transition_text = f"La historia continúa sin un evento guiado. ({e})"
+            print(f"[❌ ERROR] No se pudo registrar la escena: {e}")
+            return scene
 
-        # Crear nueva escena a partir de la transición
-        new_scene = {
-            "scene_id": datetime.utcnow().isoformat(),
-            "title": "Nueva escena generada",
-            "description": transition_text,
-            "description_adapted": self.tone_adapter.adapt_tone(
-                description=transition_text,
-                emotion="neutral",
-                intensity=0.5,
-                genre="heroic"
-            ),
-            "scene_type": "narrative_transition",
-            "emotion": "neutral",
-            "emotion_intensity": 0.5,
-            "status": "active",
-            "created_at": datetime.utcnow().isoformat(),
-            "objectives": [],
-            "npcs": [],
-            "environment": {"lighting": "", "weather": "", "terrain": ""},
-            "available_actions": [],
-            "transitions": []
-        }
+    # ------------------------------
+    # Guardar log local de escenas
+    # ------------------------------
+    def _save_scenes(self):
+        os.makedirs(os.path.join(self.data_path, "emotion"), exist_ok=True)
+        path = os.path.join(self.data_path, "emotion", "scene_log.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"scenes": self.scenes_log}, f, indent=4, ensure_ascii=False)
 
-        self.state_service.save_scene(new_scene)
-        return transition_text
+    # ------------------------------
+    # Resetear historial local
+    # ------------------------------
+    def reset_local_log(self):
+        self.scenes_log = []
+        path = os.path.join(self.data_path, "emotion", "scene_log.json")
+        if os.path.exists(path):
+            os.remove(path)
+        print("🧹 Historial local de escenas reiniciado.")
 
-    # ==========================================================
-    # 🔍 CONSULTAS
-    # ==========================================================
-    def get_active_scene(self):
-        """Obtiene la escena activa desde el estado persistente."""
-        return self.state_service.load_scene()
 
-    def summarize_scene(self):
-        """Devuelve un resumen narrativo del estado actual."""
-        scene = self.get_active_scene()
-        if not scene:
-            return "No hay escena activa en este momento."
+# ------------------------------------------------
+# 🧪 DEMO LOCAL
+# ------------------------------------------------
+if __name__ == "__main__":
+    print("🧩 Ejecutando demo de SceneManager con Emotional Tracker...\n")
 
-        summary = (
-            f"🎭 *Escena actual:* {scene['title']}\n"
-            f"📖 {scene['description_adapted']}\n"
-            f"💫 Emoción: `{scene.get('emotion', 'neutral')}` "
-            f"(intensidad {scene.get('emotion_intensity', 0.5)})"
-        )
-        return summary
+    # Simular dependencias mínimas
+    class DummyTone:
+        def get_current_emotions(self): return {"joy": 0.5, "fear": 0.2, "sadness": 0.1}
+        def get
