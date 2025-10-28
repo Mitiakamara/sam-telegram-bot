@@ -1,39 +1,38 @@
 # sam-telegram-bot/core/gameplay/roll_resolver.py
 """
-Integra el resultado de una tirada con el Scene Manager y el Story Director.
-Permite que las acciones exitosas o fallidas modifiquen el estado narrativo.
+Conecta el resultado de las tiradas con el Scene Manager y el Story Director.
+Cada tirada puede generar una nueva escena según su resultado.
 """
 from core.scene_manager.scene_manager import SceneManager
 from core.dice_roller.parser import perform_roll
 from core.dice_roller.intent_mapper import detect_attribute_from_text
+from core.story_director.story_director import StoryDirector
 
-scene_manager = SceneManager()  # instancia compartida del motor de escenas
+scene_manager = SceneManager()
+story_director = StoryDirector()  # genera nuevas escenas dinámicas
 
 async def resolve_action(update, player_name: str, text: str, orchestrator):
     """
-    Procesa una acción del jugador, realiza la tirada adecuada
-    y actualiza la escena en función del resultado.
+    Procesa la acción del jugador, realiza la tirada y genera
+    una escena dinámica basada en el resultado.
     """
-    # 1️⃣ Detectar atributo
+    # 1️⃣ Detectar atributo relevante
     ab_code = detect_attribute_from_text(text)
     if not ab_code:
-        # Si no hay tirada relevante, devolver al orquestador normal
-        msg = await orchestrator.handle_action(player_name, text)
-        return msg
+        return None  # acción puramente narrativa, sin tirada
 
-    # 2️⃣ Realizar tirada
+    # 2️⃣ Ejecutar tirada completa
     roll_msg = perform_roll(player_name, text)
 
-    # 3️⃣ Extraer total de la tirada
+    # 3️⃣ Extraer total numérico del resultado
     import re
     m = re.search(r"= (\d+)", roll_msg)
     total = int(m.group(1)) if m else 10
 
-    # 4️⃣ Determinar efecto narrativo
-    effect = "neutral"
-    if total >= 18:
+    # 4️⃣ Clasificar resultado
+    if total >= 20:
         effect = "critical_success"
-    elif total >= 14:
+    elif total >= 15:
         effect = "success"
     elif total >= 10:
         effect = "partial_success"
@@ -42,29 +41,35 @@ async def resolve_action(update, player_name: str, text: str, orchestrator):
     else:
         effect = "critical_failure"
 
-    # 5️⃣ Actualizar escena actual
-    scene = scene_manager.get_active_scene()
-    if not scene:
-        return roll_msg  # sin escena activa
+    # 5️⃣ Generar nueva escena según efecto
+    new_scene = None
+    if effect == "critical_success":
+        new_scene = story_director.generate_scene(template="triumph_scene", cause=text)
+    elif effect == "success":
+        new_scene = story_director.generate_scene(template="progress_scene", cause=text)
+    elif effect == "partial_success":
+        new_scene = story_director.generate_scene(template="tension_scene", cause=text)
+    elif effect == "failure":
+        new_scene = story_director.generate_scene(template="setback_scene", cause=text)
+    elif effect == "critical_failure":
+        new_scene = story_director.generate_scene(template="complication_scene", cause=text)
 
-    # Cambiar estado o iniciar transición según resultado
-    if effect in ["critical_success", "success"]:
-        scene["status"] = "resolved"
-        scene["description_adapted"] = f"La acción tiene éxito: {text}."
-        new_scene = scene_manager.transition_to("success_event")
-        await update.message.reply_text("🌟 Tu acción cambia el curso de los acontecimientos...")
-        return roll_msg + f"\n\n📜 La historia progresa hacia una nueva escena: *{new_scene['title']}*"
+    # 6️⃣ Actualizar Scene Manager
+    if new_scene:
+        scene_manager.add_scene(new_scene)
+        orchestrator.set_active_scene(new_scene)
+        msg_suffix = f"\n\n📜 *Nueva escena generada:* `{new_scene['title']}`"
+    else:
+        msg_suffix = "\n\n⚖️ La escena actual continúa en desarrollo."
 
-    elif effect in ["failure", "critical_failure"]:
-        scene["status"] = "complication"
-        scene["description_adapted"] = f"El intento falla: {text}."
-        new_scene = scene_manager.transition_to("complication_event")
-        await update.message.reply_text("⚠️ Tu fallo tiene consecuencias inesperadas...")
-        return roll_msg + f"\n\n💥 La tensión aumenta: *{new_scene['title']}*"
+    # 7️⃣ Ajustar mood global
+    if hasattr(orchestrator, "apply_feedback"):
+        if effect in ["critical_success", "success"]:
+            orchestrator.apply_feedback("excited", +0.2)
+        elif effect in ["failure", "critical_failure"]:
+            orchestrator.apply_feedback("tension", +0.1)
 
-    # Parcial o neutral: mantener la misma escena pero actualizar estado
-    scene["status"] = "ongoing"
-    scene["description_adapted"] = f"La acción de {player_name} continúa sin resultados definitivos."
-    scene_manager.update_scene(scene)
-
-    return roll_msg + "\n\n⚖️ La escena continúa en desarrollo..."
+    # 8️⃣ Responder al jugador
+    await update.message.reply_markdown(roll_msg + msg_suffix)
+    await orchestrator.sync_scene_state()
+    return roll_msg + msg_suffix
