@@ -1,0 +1,13 @@
+{
+  "title": "Retroceso inesperado",
+  "description": "Tu intento falla o causa un contratiempo. {cause} complica la situación actual.",
+  "scene_type": "setback",
+  "emotion_intensity": 0.5,
+  "environment": {
+    "lighting": "shadows",
+    "weather": "rain",
+    "terrain": "resbaladizo"
+  },
+  "available_actions": ["replegarse", "revisar", "intentar nuevamente"],
+  "tags": ["fracaso", "obstáculo", "riesgo"]
+}
