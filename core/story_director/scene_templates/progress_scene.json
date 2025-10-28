@@ -1,0 +1,13 @@
+{
+  "title": "Avance significativo",
+  "description": "Tu esfuerzo da frutos. {cause} abre un nuevo camino o revela información útil.",
+  "scene_type": "progress",
+  "emotion_intensity": 0.7,
+  "environment": {
+    "lighting": "natural",
+    "weather": "templado",
+    "terrain": "transitable"
+  },
+  "available_actions": ["investigar", "hablar", "continuar"],
+  "tags": ["progreso", "exploración", "decisión"]
+}
