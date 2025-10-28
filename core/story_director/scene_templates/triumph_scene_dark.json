@@ -1,0 +1,13 @@
+{
+  "title": "Triunfo sombrío",
+  "description": "Has vencido, pero el precio de la victoria deja una sombra. {cause}",
+  "scene_type": "resolution",
+  "emotion_intensity": 0.85,
+  "environment": {
+    "lighting": "dim",
+    "weather": "stormy",
+    "terrain": "ruins"
+  },
+  "available_actions": ["reflexionar", "descansar", "vigilar"],
+  "tags": ["oscuro", "victoria amarga", "reflexión"]
+}
