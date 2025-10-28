@@ -1,235 +1,159 @@
-import json
+# sam-telegram-bot/core/mood_manager/mood_manager.py
+"""
+MoodManager
+------------
+Controla el estado tonal global de la campaña.
+Coordina la intensidad emocional, el perfil de género y
+las transiciones suaves entre estados de ánimo detectados.
+
+Este módulo se alimenta de las emociones analizadas por
+EmotionService y las decisiones narrativas del StoryDirector.
+"""
+
 import os
+import json
 from datetime import datetime
-from statistics import mean
+from core.services.emotion_service import EmotionService
 
-
-# ================================================================
-# 🎭 Mood Manager – Gestor de tono global de campaña
-# ================================================================
 
 class MoodManager:
     """
-    Controla y mantiene la coherencia emocional y tonal
-    de la campaña completa. Evalúa las últimas escenas,
-    ajusta el clima narrativo y sincroniza el tono global
-    con el Story Director y el Tone Adapter.
+    Mantiene y ajusta el clima emocional global de la historia.
     """
 
-    MOOD_PROFILES = {
-        "heroic": ["hopeful", "triumphant", "bright", "courageous"],
-        "dark_fantasy": ["grim", "tense", "melancholic", "foreboding"],
-        "mystery": ["curious", "tense", "mystical", "uneasy"],
-        "exploration": ["curious", "serene", "wonder", "awe"],
-        "horror": ["fearful", "oppressive", "desperate", "unsettling"]
-    }
+    def __init__(self, state_path: str = "data/game_state.json"):
+        self.state_path = state_path
+        self.emotion_service = EmotionService()
 
-    def __init__(self, game_state_path: str):
-        self.game_state_path = game_state_path
-        self.data = self._load_game_state()
-        self.mood_state = self.data.get("mood_manager", {}).get("campaign_mood_state", "neutral")
-        self.mood_intensity = self.data.get("mood_manager", {}).get("mood_intensity", 0.5)
-        self.genre_profile = self.data.get("mood_manager", {}).get("genre_profile", "heroic")
-        self.history = self.data.get("mood_manager", {}).get("history", [])
-        self.last_update = self.data.get("mood_manager", {}).get("last_update")
+        # Estado tonal actual
+        self.mood_state = "neutral"
+        self.mood_intensity = 0.5
+        self.genre_profile = "heroic"
+        self.last_update = datetime.utcnow().isoformat()
 
-    # ------------------------------------------------------------
-    # 🧩 UTILIDADES INTERNAS
-    # ------------------------------------------------------------
+        self._load_state()
 
-    def _load_game_state(self):
-        if not os.path.exists(self.game_state_path):
-            return {}
-        with open(self.game_state_path, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return {}
+    # ==========================================================
+    # 📂 PERSISTENCIA DEL ESTADO
+    # ==========================================================
+    def _load_state(self):
+        """Carga el estado global del mood desde disco."""
+        if not os.path.exists(self.state_path):
+            return
+        try:
+            with open(self.state_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.mood_state = data.get("mood_state", self.mood_state)
+            self.mood_intensity = data.get("mood_intensity", self.mood_intensity)
+            self.genre_profile = data.get("genre_profile", self.genre_profile)
+            self.last_update = data.get("last_update", self.last_update)
+        except Exception:
+            pass
 
-    def _save_game_state(self):
-        self.data["mood_manager"] = {
-            "campaign_mood_state": self.mood_state,
+    def _save_state(self):
+        """Guarda el estado global actual."""
+        data = {
+            "mood_state": self.mood_state,
             "mood_intensity": self.mood_intensity,
             "genre_profile": self.genre_profile,
             "last_update": self.last_update,
-            "history": self.history[-20:]  # guarda solo las últimas 20 escenas
         }
-        with open(self.game_state_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2, ensure_ascii=False)
+        os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
+        with open(self.state_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
 
-    # ------------------------------------------------------------
-    # 🔍 ANÁLISIS Y CÁLCULO DE MOOD GLOBAL
-    # ------------------------------------------------------------
-
-    def analyze_recent_scenes(self, recent_scenes: list):
+    # ==========================================================
+    # 🧠 ANÁLISIS DE ESCENAS RECIENTES
+    # ==========================================================
+    def analyze_recent_scenes(self, scenes: list[dict]) -> tuple[str, float]:
         """
-        Recibe una lista de escenas recientes desde SceneManager.
-        Cada escena debe incluir:
-        {
-            "scene_id": str,
-            "emotion": str,
-            "emotion_intensity": float
-        }
+        Calcula el estado tonal promedio a partir de las últimas escenas.
         """
-        if not recent_scenes:
-            return self.mood_state, self.mood_intensity
+        if not scenes:
+            return (self.mood_state, self.mood_intensity)
 
-        emotions = [s["emotion"] for s in recent_scenes if "emotion" in s]
-        intensities = [s.get("emotion_intensity", 0.5) for s in recent_scenes]
+        total_intensity = 0
+        emotion_counts = {}
 
-        # Determina emoción dominante
-        dominant = self._most_common(emotions)
-        avg_intensity = mean(intensities)
+        for scene in scenes:
+            emo = scene.get("emotion", "neutral")
+            val = scene.get("emotion_intensity", 0.5)
+            total_intensity += val
+            emotion_counts[emo] = emotion_counts.get(emo, 0) + 1
 
-        mapped_mood = self._map_emotion_to_mood(dominant)
-        self.mood_state = mapped_mood
+        # Emoción dominante y media de intensidad
+        dominant = max(emotion_counts, key=emotion_counts.get)
+        avg_intensity = total_intensity / max(len(scenes), 1)
+
+        self.mood_state = dominant
         self.mood_intensity = round(avg_intensity, 2)
         self.last_update = datetime.utcnow().isoformat()
+        self._save_state()
 
-        # Guarda en historial
-        self.history.append({
-            "scene_id": recent_scenes[-1].get("scene_id", "unknown"),
-            "mood": self.mood_state,
-            "intensity": self.mood_intensity,
-            "timestamp": self.last_update
-        })
+        return (self.mood_state, self.mood_intensity)
 
-        self._save_game_state()
-        return self.mood_state, self.mood_intensity
-
-    def _most_common(self, items):
-        return max(set(items), key=items.count) if items else "neutral"
-
-    # ------------------------------------------------------------
-    # 🧠 TRADUCTOR DE EMOCIONES → MOOD GLOBAL
-    # ------------------------------------------------------------
-
-    def _map_emotion_to_mood(self, emotion):
+    # ==========================================================
+    # 💫 NORMALIZACIÓN DEL MOOD
+    # ==========================================================
+    def normalize_mood(self) -> dict | None:
         """
-        Traduce una emoción detectada (de escena o evento)
-        a una categoría de mood coherente con emotional_scale.json.
+        Si hay un salto emocional fuerte, genera una transición tonal sugerida.
         """
-        emotion = (emotion or "").lower().strip()
-
-        emotion_map = {
-            # Positivos / heroicos
-            "joy": "hopeful",
-            "hope": "hopeful",
-            "triumph": "triumphant",
-            "victory": "triumphant",
-            "confidence": "hopeful",
-            "love": "romantic",
-
-            # Neutrales / contemplativos
-            "curiosity": "curious",
-            "wonder": "curious",
-            "discovery": "curious",
-            "serenity": "serene",
-            "peace": "serene",
-
-            # Negativos / tensos
-            "fear": "fearful",
-            "terror": "fearful",
-            "anger": "grim",
-            "rage": "grim",
-            "hatred": "grim",
-            "conflict": "chaotic",
-            "tension": "tense",
-            "stress": "tense",
-
-            # Tristes / melancólicos
-            "sadness": "melancholic",
-            "melancholy": "melancholic",
-            "loss": "melancholic",
-            "grief": "melancholic",
-
-            # Espirituales / místicos
-            "mystery": "mystical",
-            "magic": "mystical",
-            "dream": "mystical",
-            "ritual": "mystical",
-
-            # Catch-all
-            "neutral": "serene",
-            "unknown": "serene"
-        }
-
-        return emotion_map.get(emotion, "neutral")
-
-    # ------------------------------------------------------------
-    # ⚖️ AJUSTE DE TONO Y NORMALIZACIÓN
-    # ------------------------------------------------------------
-
-    def normalize_mood(self):
-        """
-        Evita saltos bruscos en el tono global.
-        Si el cambio de mood supera un umbral,
-        propone una escena de transición.
-        """
-        if len(self.history) < 2:
-            return None
-
-        last = self.history[-1]
-        prev = self.history[-2]
-
-        delta = abs(last["intensity"] - prev["intensity"])
-        if delta > 0.4:
-            transition = self._suggest_transition(prev["mood"], last["mood"])
-            return transition
+        if self.mood_intensity > 0.9:
+            return {
+                "from": self.mood_state,
+                "to": "triumphant",
+                "suggestion": "La tensión se disipa y surge una sensación de triunfo."
+            }
+        elif self.mood_intensity < 0.3:
+            return {
+                "from": self.mood_state,
+                "to": "melancholic",
+                "suggestion": "Un velo de melancolía cubre el ambiente, suavizando el ánimo del grupo."
+            }
         return None
 
-    def _suggest_transition(self, prev_mood, new_mood):
-        """
-        Devuelve una sugerencia narrativa para suavizar la transición.
-        """
-        return {
-            "type": "transition_scene",
-            "from": prev_mood,
-            "to": new_mood,
-            "suggestion": f"Introduce una breve escena de respiro o reflexión antes de pasar de '{prev_mood}' a '{new_mood}'."
-        }
-
-    # ------------------------------------------------------------
-    # 🧭 PERFIL DE GÉNERO Y ALINEACIÓN TONAL
-    # ------------------------------------------------------------
-
-    def align_to_genre(self):
-        """
-        Atrae el mood global hacia el perfil tonal del género.
-        """
-        target_profile = self.MOOD_PROFILES.get(self.genre_profile, [])
-        if not target_profile:
-            return self.mood_state
-
-        if self.mood_state not in target_profile:
-            # Empuja el estado hacia el más cercano del perfil
-            self.mood_state = target_profile[0]
-            self._save_game_state()
-
-        return self.mood_state
-
-    # ------------------------------------------------------------
-    # 💬 RETROALIMENTACIÓN DESDE JUGADORES O STORY DIRECTOR
-    # ------------------------------------------------------------
-
+    # ==========================================================
+    # ⚙️ AJUSTE DESDE FEEDBACK EMOCIONAL
+    # ==========================================================
     def adjust_from_feedback(self, player_emotion: str, delta: float = 0.1):
         """
-        Ajusta el tono según feedback emocional directo del jugador o del Story Director.
-        Ej: player_emotion="bored", delta=+0.3  -> sube la intensidad.
+        Ajusta la intensidad del mood global según feedback emocional
+        de los jugadores o el sistema.
         """
-        if player_emotion in ["bored", "disengaged"]:
-            self.mood_intensity = max(0.3, self.mood_intensity - 0.2)
-        elif player_emotion in ["excited", "immersed"]:
-            self.mood_intensity = min(1.0, self.mood_intensity + 0.2)
-        elif player_emotion in ["fear", "tense"]:
-            self.mood_intensity = min(1.0, self.mood_intensity + 0.1)
-            self.mood_state = "tense"
-        elif player_emotion in ["sad", "melancholic"]:
-            self.mood_intensity = max(0.2, self.mood_intensity - 0.1)
-            self.mood_state = "melancholic"
-        else:
-            self.mood_intensity = max(0, min(1, self.mood_intensity + delta))
-
+        level = self.emotion_service.emotion_to_level(player_emotion)
+        # Mezcla ponderada entre el nivel base y el delta
+        self.mood_intensity = min(1.0, max(0.0, self.mood_intensity + delta * (level - 0.5)))
+        self.mood_state = player_emotion.lower()
         self.last_update = datetime.utcnow().isoformat()
-        self._save_game_state()
+        self._save_state()
         return self.mood_intensity
+
+    # ==========================================================
+    # 🎭 REFORZAR ALINEACIÓN CON EL GÉNERO
+    # ==========================================================
+    def align_to_genre(self):
+        """
+        Ajusta el tono general según el género narrativo actual.
+        """
+        if self.genre_profile == "dark_fantasy" and self.mood_intensity > 0.7:
+            self.mood_state = "grim"
+        elif self.genre_profile == "mystery" and self.mood_state not in ["mystical", "serene"]:
+            self.mood_state = "mystical"
+        elif self.genre_profile == "romantic" and self.mood_state in ["sadness", "melancholic"]:
+            self.mood_state = "hopeful"
+        self.last_update = datetime.utcnow().isoformat()
+        self._save_state()
+
+    # ==========================================================
+    # 📊 ESTADO ACTUAL
+    # ==========================================================
+    def get_mood_summary(self) -> str:
+        """Devuelve un resumen textual del estado tonal."""
+        return (
+            f"🌡️ Estado tonal global:\n"
+            f"- Mood: {self.mood_state}\n"
+            f"- Intensidad: {self.mood_intensity}\n"
+            f"- Género: {self.genre_profile}\n"
+            f"- Última actualización: {self.last_update}"
+        )
