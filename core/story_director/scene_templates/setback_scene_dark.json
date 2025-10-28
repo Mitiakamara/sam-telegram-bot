@@ -1,0 +1,13 @@
+{
+  "title": "Desastre inminente",
+  "description": "El fracaso no solo retrasa el avance; atrae algo siniestro. {cause}",
+  "scene_type": "setback",
+  "emotion_intensity": 0.7,
+  "environment": {
+    "lighting": "gloom",
+    "weather": "thunderstorm",
+    "terrain": "pantano"
+  },
+  "available_actions": ["huir", "ocultarse", "prepararse"],
+  "tags": ["terror", "peligro", "fatalidad"]
+}
