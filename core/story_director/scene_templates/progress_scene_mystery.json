@@ -1,0 +1,13 @@
+{
+  "title": "Descubrimiento inquietante",
+  "description": "Tu éxito revela algo que preferirías no haber visto. {cause}",
+  "scene_type": "progress",
+  "emotion_intensity": 0.6,
+  "environment": {
+    "lighting": "faint",
+    "weather": "misty",
+    "terrain": "ruins"
+  },
+  "available_actions": ["investigar", "anotar", "ocultar"],
+  "tags": ["misterio", "descubrimiento", "suspenso"]
+}
