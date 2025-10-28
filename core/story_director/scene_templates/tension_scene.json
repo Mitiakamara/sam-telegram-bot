@@ -1,0 +1,13 @@
+{
+  "title": "Tensión en aumento",
+  "description": "El resultado es incierto; algo se mueve en la sombra. {cause}",
+  "scene_type": "tension",
+  "emotion_intensity": 0.6,
+  "environment": {
+    "lighting": "dim",
+    "weather": "nublado",
+    "terrain": "estrecho"
+  },
+  "available_actions": ["observar", "preparar", "esperar"],
+  "tags": ["tensión", "misterio", "precaución"]
+}
