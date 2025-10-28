@@ -10,7 +10,7 @@ eventos recientes.
 
 import statistics
 from core.story_director.memory_manager import MemoryManager
-from core.scene_manager.tone_adapter import ToneAdapter
+from core.tone_adapter.tone_adapter import ToneAdapter
 
 
 class RecapManager:
