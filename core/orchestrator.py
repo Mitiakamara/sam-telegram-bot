@@ -17,7 +17,7 @@ import asyncio
 from core.scene_manager.scene_manager import SceneManager
 from core.services.game_service import GameService
 from core.services.state_service import StateService
-from core.utils.renderer import render
+from core.renderer import render
 from core.story_director.director_link import DirectorLink
 
 
