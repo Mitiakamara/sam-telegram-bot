@@ -1,0 +1,13 @@
+{
+  "title": "Complicación peligrosa",
+  "description": "Tu acción desencadena una amenaza o consecuencia seria. {cause}",
+  "scene_type": "danger",
+  "emotion_intensity": 0.8,
+  "environment": {
+    "lighting": "dark",
+    "weather": "tormenta",
+    "terrain": "hostil"
+  },
+  "available_actions": ["defenderse", "huir", "buscar cobertura"],
+  "tags": ["peligro", "crisis", "urgencia"]
+}
