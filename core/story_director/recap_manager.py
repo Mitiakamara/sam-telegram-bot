@@ -1,69 +1,116 @@
+# sam-telegram-bot/core/story_director/recap_manager.py
 """
 RecapManager
 -------------
-Genera un resumen narrativo dinámico basado en la memoria dramática de S.A.M.
-
-Analiza los eventos guardados en memory_state.json y crea una recapitulación
-en tono adaptativo, mencionando temas recurrentes, emociones dominantes y
-eventos recientes.
+Genera un resumen narrativo dinámico de la campaña actual.
+Analiza escenas recientes, su tono emocional y los eventos importantes
+para ofrecer al jugador una recapitulación coherente.
 """
 
-import statistics
-from core.story_director.memory_manager import MemoryManager
-from core.tone_adapter.tone_adapter import ToneAdapter
+import os
+import json
+from datetime import datetime
+from core.renderer import render
 
 
 class RecapManager:
-    def __init__(self):
-        self.memory = MemoryManager()
-        self.tone_adapter = ToneAdapter()
+    """
+    Genera recapitulaciones a partir de los registros narrativos recientes.
+    Se apoya en el MoodManager y los datos persistidos en game_state.json.
+    """
+
+    def __init__(self, base_path: str = "data/"):
+        self.base_path = base_path
+        self.state_path = os.path.join(base_path, "game_state.json")
+        self.scenes_path = os.path.join(base_path, "scenes_history.json")
+
+        # Cargar información persistente
+        self._ensure_files_exist()
 
     # ==========================================================
-    # 🔹 GENERAR RESUMEN
+    # 🧱 UTILIDADES INTERNAS
+    # ==========================================================
+    def _ensure_files_exist(self):
+        """Crea archivos mínimos si no existen."""
+        os.makedirs(self.base_path, exist_ok=True)
+
+        if not os.path.exists(self.state_path):
+            with open(self.state_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "mood_state": "neutral",
+                        "mood_intensity": 0.5,
+                        "genre_profile": "heroic",
+                        "last_update": datetime.utcnow().isoformat(),
+                    },
+                    f,
+                    indent=2,
+                    ensure_ascii=False,
+                )
+
+        if not os.path.exists(self.scenes_path):
+            with open(self.scenes_path, "w", encoding="utf-8") as f:
+                json.dump([], f, indent=2, ensure_ascii=False)
+
+    def _load_scenes(self) -> list:
+        """Carga la lista de escenas guardadas."""
+        try:
+            with open(self.scenes_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+    def _load_mood(self) -> dict:
+        """Carga el estado tonal global."""
+        try:
+            with open(self.state_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {
+                "mood_state": "neutral",
+                "mood_intensity": 0.5,
+                "genre_profile": "heroic",
+                "last_update": "unknown",
+            }
+
+    # ==========================================================
+    # 🧠 GENERADOR DE RECAPITULACIÓN
     # ==========================================================
     def generate_recap(self) -> str:
-        """Crea un resumen narrativo adaptativo del viaje."""
-        data = self.memory.memory
-        timeline = data.get("timeline", [])
-        if not timeline:
-            return "S.A.M. se queda pensativo... aún no hay historia que recordar."
+        """
+        Crea un resumen narrativo de las últimas escenas.
+        Integra el mood global para mantener coherencia emocional.
+        """
+        scenes = self._load_scenes()
+        mood = self._load_mood()
 
-        # Determinar emociones promedio y temas predominantes
-        avg_emotion = self.memory.get_average_emotion()
-        main_theme = self.memory.get_recurrent_theme() or "misterio"
-        last_event = self.memory.get_last_event()
-
-        # Construir resumen base
-        total_events = len(timeline)
-        opening = f"📜 *Resumen del viaje hasta ahora* ({total_events} eventos registrados)\n\n"
-        narrative = []
-
-        # Sintetizar primeros y últimos eventos
-        if total_events > 3:
-            first = timeline[0]
-            middle = timeline[len(timeline) // 2]
-            last = timeline[-1]
-            narrative.append(
-                f"Todo comenzó con *{first['theme']}*, cuando {first['description'].lower()}"
+        if not scenes:
+            return render(
+                "Aún no hay suficientes recuerdos grabados en la historia de esta campaña."
             )
-            narrative.append(
-                f"Más tarde, el tono de la historia se tornó hacia *{middle['theme']}*, "
-                f"marcado por la emoción de nivel {middle['emotion']}."
+
+        # Tomar las últimas 5 escenas (o menos)
+        recent = scenes[-5:]
+        lines = []
+
+        for sc in recent:
+            title = sc.get("title", "Escena sin título")
+            desc = sc.get("description_adapted", sc.get("description", ""))
+            emo = sc.get("emotion", "neutral")
+            intensity = sc.get("emotion_intensity", 0.5)
+
+            lines.append(
+                f"🎭 *{title}*\n"
+                f"📖 {desc}\n"
+                f"💫 Emoción: `{emo}` (intensidad {intensity})\n"
             )
-            narrative.append(
-                f"Y finalmente, {last['description'].lower()} — un reflejo del tema de *{last['theme']}*."
-            )
-        else:
-            for ev in timeline:
-                narrative.append(f"- {ev['description']}")
 
-        # Añadir análisis emocional y temático
-        narrative.append("")
-        narrative.append(f"💫 *Tema predominante:* {main_theme.capitalize()}")
-        narrative.append(f"🎭 *Emoción media del viaje:* {round(avg_emotion, 2)} / 5")
+        # Agregar información tonal general
+        mood_text = (
+            f"\n🌡️ Estado tonal global: *{mood.get('mood_state', 'neutral')}* "
+            f"(intensidad {mood.get('mood_intensity', 0.5)}) · "
+            f"género: *{mood.get('genre_profile', 'heroic')}*"
+        )
 
-        # Adaptar tono del resumen
-        recap_text = " ".join(narrative)
-        recap_text = self.tone_adapter.adapt_description(recap_text, int(round(avg_emotion)))
-
-        return opening + recap_text
+        recap_text = "📜 *Resumen del viaje reciente*\n\n" + "\n".join(lines) + mood_text
+        return render(recap_text)
