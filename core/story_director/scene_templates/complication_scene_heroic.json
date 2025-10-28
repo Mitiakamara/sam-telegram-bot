@@ -1,0 +1,13 @@
+{
+  "title": "Prueba de héroes",
+  "description": "El obstáculo se alza ante ti, pero los valientes nunca retroceden. {cause}",
+  "scene_type": "danger",
+  "emotion_intensity": 0.8,
+  "environment": {
+    "lighting": "flickering",
+    "weather": "windy",
+    "terrain": "rocoso"
+  },
+  "available_actions": ["enfrentar", "resistir", "superar"],
+  "tags": ["heroico", "desafío", "coraje"]
+}
