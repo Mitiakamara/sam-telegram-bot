@@ -1,0 +1,43 @@
+{
+  "factions": [
+    {
+      "id": "kingdom_valenforth",
+      "name": "Reino de Valenforth",
+      "alignment": "legal-bueno",
+      "region": "Tierras del Alba",
+      "influence": 60,
+      "reputation": 20,
+      "relations": {
+        "guild_iron_crow": 10,
+        "cult_flame_eternal": -30
+      },
+      "status": "activo"
+    },
+    {
+      "id": "guild_iron_crow",
+      "name": "Gremio del Cuervo de Hierro",
+      "alignment": "neutral",
+      "region": "Valles de Agramon",
+      "influence": 45,
+      "reputation": 0,
+      "relations": {
+        "kingdom_valenforth": 10,
+        "cult_flame_eternal": -10
+      },
+      "status": "activo"
+    },
+    {
+      "id": "cult_flame_eternal",
+      "name": "Culto de la Llama Eterna",
+      "alignment": "caótico-malo",
+      "region": "Desiertos del Sur",
+      "influence": 35,
+      "reputation": -20,
+      "relations": {
+        "kingdom_valenforth": -30,
+        "guild_iron_crow": -10
+      },
+      "status": "activo"
+    }
+  ]
+}
