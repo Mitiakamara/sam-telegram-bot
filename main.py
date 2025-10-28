@@ -8,6 +8,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -16,6 +17,8 @@ from core.narrator import SAMNarrator
 from core.party_events import PartyEventSystem
 from core.orchestrator import Orchestrator
 from core.story_director.recap_manager import RecapManager
+# 🧩 NUEVO: Character Builder guiado (con 27 point buy)
+from core.character_builder import start_character_creation, handle_response, handle_callback
 
 # ================================================================
 # ⚙️ CONFIGURACIÓN INICIAL
@@ -78,80 +81,17 @@ async def maybe_reply_mood(update: Update, prefix: str = ""):
         logger.warning(f"No se pudo obtener mood actual: {e}")
 
 # ================================================================
-# 🧙‍♂️ CREATE CHARACTER – Texto o archivo
+# 🧙‍♂️ CREATE CHARACTER – modo GUIADO SRD
 # ================================================================
 async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Crea o carga un personaje desde texto o archivo.
-    Ejemplo:
-      /createcharacter
-      Nombre: Thamior Liadon
-      Raza: Elfo del bosque
-      Clase: Explorador
-      Nivel: 3
-      Fuerza: 12 ...
+    Nueva versión: invoca el Character Builder guiado con 27 Point Buy.
     """
-    try:
-        text = ""
-        # Si viene archivo adjunto
-        if update.message.document:
-            file = await update.message.document.get_file()
-            file_path = f"/tmp/{update.message.document.file_name}"
-            await file.download_to_drive(file_path)
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                text = f.read()
-            await update.message.reply_text("📜 Analizando hoja de personaje subida...")
-        else:
-            # Si viene texto pegado
-            text = " ".join(context.args) if context.args else update.message.text
-
-        import re
-        def extract(field, default=""):
-            pat = rf"{field}\s*[:\-]?\s*([A-Za-z0-9áéíóúÁÉÍÓÚüÜñÑ ]+)"
-            m = re.search(pat, text, re.IGNORECASE)
-            return m.group(1).strip() if m else default
-
-        name = extract("Nombre", "Aventurero")
-        race = extract("Raza", "Humano")
-        char_class = extract("Clase", "Guerrero")
-        level = int(extract("Nivel", "1") or 1)
-        hp = int(extract("Puntos de golpe|HP|Vida", "10") or 10)
-        stats = {
-            "strength": int(extract("Fuerza", "10")),
-            "dexterity": int(extract("Destreza", "10")),
-            "constitution": int(extract("Constitución", "10")),
-            "intelligence": int(extract("Inteligencia", "10")),
-            "wisdom": int(extract("Sabiduría", "10")),
-            "charisma": int(extract("Carisma", "10")),
-        }
-
-        payload = {
-            "player": name,
-            "attributes": {
-                "race": race,
-                "class": char_class,
-                "level": level,
-                "hp": hp,
-                **stats,
-            },
-        }
-
-        result = await api_request("POST", "/party/update", payload)
-        if not result:
-            await update.message.reply_text("⚠️ No se pudo crear el personaje. Intenta nuevamente.")
-            return
-
-        msg = (
-            f"✅ *Personaje cargado correctamente*\n\n"
-            f"👤 *{name}*, {race} {char_class}\n"
-            f"❤️ HP: {hp}  ·  🧭 Nivel {level}\n\n"
-            f"💪 {stats['strength']}  🎯 {stats['dexterity']}  🛡️ {stats['constitution']}\n"
-            f"🧠 {stats['intelligence']}  🙏 {stats['wisdom']}  😎 {stats['charisma']}"
-        )
-        await update.message.reply_text(msg, parse_mode="Markdown")
-
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error al procesar personaje: {e}")
+    await update.message.reply_text(
+        "🧙‍♂️ Iniciando creación de personaje.\n\n"
+        "Responde las preguntas paso a paso para definir nombre, raza, clase, atributos, habilidades y hechizos."
+    )
+    await start_character_creation(update, context)
 
 # ================================================================
 # 🎲 PARTY COMMANDS (join/leave/etc.)
@@ -282,7 +222,13 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================================================================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # 🔹 Integración del Character Builder guiado
     app.add_handler(CommandHandler("createcharacter", create_character))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_response))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+
+    # 🔹 Resto del sistema de juego
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("leave", leave))
     app.add_handler(CommandHandler("party", list_party))
@@ -291,7 +237,8 @@ def main():
     app.add_handler(CommandHandler("recap", recap_story))
     app.add_handler(CommandHandler("mood", show_mood))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_text))
-    logger.info("🤖 S.A.M. listo en modo narrativo completo + SRD.")
+
+    logger.info("🤖 S.A.M. listo: modo narrativo + Character Builder SRD activo.")
     app.run_polling()
 
 if __name__ == "__main__":
