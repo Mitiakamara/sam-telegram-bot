@@ -1,0 +1,13 @@
+{
+  "title": "Tensión en la penumbra",
+  "description": "El aire es espeso y cada paso parece un riesgo. {cause}",
+  "scene_type": "tension",
+  "emotion_intensity": 0.7,
+  "environment": {
+    "lighting": "flickering",
+    "weather": "fog",
+    "terrain": "estrecho"
+  },
+  "available_actions": ["observar", "callar", "esperar"],
+  "tags": ["oscuridad", "suspenso", "temor"]
+}
