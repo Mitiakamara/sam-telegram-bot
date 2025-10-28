@@ -1,0 +1,21 @@
+{
+  "history": [
+    {
+      "scene_id": "uuid",
+      "title": "string",
+      "timestamp": "2025-10-28T12:00:00Z",
+      "scene_type": "progress|tension|triumph|setback|complication",
+      "dominant_emotion": "joy|fear|anger|sadness|surprise|neutral",
+      "emotion_vector": {
+        "joy": 0.4,
+        "fear": 0.1,
+        "anger": 0.0,
+        "sadness": 0.3,
+        "surprise": 0.2
+      },
+      "tone": "dark|neutral|hopeful|melancholic",
+      "summary": "Breve resumen de lo ocurrido",
+      "outcome": "success|failure|mixed"
+    }
+  ]
+}
