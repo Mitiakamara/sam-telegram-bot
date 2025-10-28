@@ -1,0 +1,52 @@
+{
+  "events": [
+    {
+      "id": "rumor_in_town",
+      "type": "social",
+      "title": "Rumor inquietante",
+      "description": "Al llegar a {location}, los aldeanos susurran sobre extraños sucesos en el norte. Algunos creen que heraldan una guerra inminente.",
+      "conditions": {
+        "weather": ["nublado", "lluvioso"],
+        "tone": ["tensión", "melancolía"],
+        "min_level": 1,
+        "max_level": 6
+      },
+      "consequence": {
+        "world": {"faction_activity": "+1"},
+        "emotion": {"tension": "+0.2"}
+      }
+    },
+    {
+      "id": "beast_attack",
+      "type": "encounter",
+      "title": "Ataque de bestia salvaje",
+      "description": "Una criatura hambrienta surge de entre la niebla, atraída por el olor de la comida del campamento.",
+      "conditions": {
+        "weather": ["niebla", "nublado"],
+        "tone": ["tensión", "neutral"],
+        "min_level": 3,
+        "max_level": 10
+      },
+      "consequence": {
+        "world": {"danger_zone": "enabled"},
+        "emotion": {"fear": "+0.3"}
+      }
+    },
+    {
+      "id": "festival_renewal",
+      "type": "celebration",
+      "title": "Festival de la renovación",
+      "description": "En {location}, los aldeanos celebran un festival que devuelve algo de esperanza. El ambiente se siente {tone}.",
+      "conditions": {
+        "weather": ["soleado", "templado"],
+        "tone": ["neutral", "esperanza"],
+        "min_level": 1,
+        "max_level": 12
+      },
+      "consequence": {
+        "world": {"reputation": "+1"},
+        "emotion": {"hope": "+0.4"}
+      }
+    }
+  ]
+}
