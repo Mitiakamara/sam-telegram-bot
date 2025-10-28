@@ -8,7 +8,7 @@ from core.character_builder.validator import validate_abilities
 # ================================================================
 # ESTADO DE SESIÓN (temporal)
 # ================================================================
-builder_state = {}  # user_id -> dict
+builder_state = {}  # user_id -> dict con progreso
 
 # ================================================================
 # TABLA DE COSTOS 27 POINT BUY
@@ -16,10 +16,11 @@ builder_state = {}  # user_id -> dict
 POINT_COST = {8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9}
 
 def total_cost(abilities: dict) -> int:
-    """Devuelve el costo total actual."""
+    """Costo total gastado."""
     return sum(POINT_COST.get(v, 0) for v in abilities.values())
 
 def points_remaining(abilities: dict) -> int:
+    """Puntos restantes del pool de 27."""
     return 27 - total_cost(abilities)
 
 # ================================================================
@@ -34,11 +35,15 @@ async def start_character_creation(update: Update, context: ContextTypes.DEFAULT
 # ================================================================
 # RESPUESTA DE TEXTO
 # ================================================================
-async def handle_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_response(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Devuelve True si el mensaje fue manejado por el Character Builder.
+    Devuelve False si el usuario no está en modo de creación.
+    """
     user_id = update.effective_user.id
     state = builder_state.get(user_id)
     if not state:
-        return await start_character_creation(update, context)
+        return False  # 🚫 sin flujo activo → dejar que lo procese el narrador
 
     step = state["step"]
     text = update.message.text.strip()
@@ -47,12 +52,38 @@ async def handle_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if step == 1:
         state["data"]["name"] = text
         state["step"] = 2
-
-        # Mostrar razas disponibles
         keyboard = [[InlineKeyboardButton(r, callback_data=f"race:{r}")] for r in SPECIES]
-        await update.message.reply_text("Elige la raza de tu personaje:",
-                                        reply_markup=InlineKeyboardMarkup(keyboard))
-        return
+        await update.message.reply_text(
+            "Elige la raza de tu personaje:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return True
+
+    # Paso 5: atributos manuales
+    if step == 5 and "abilities" not in state["data"]:
+        parts = text.split()
+        if len(parts) != 6:
+            await update.message.reply_text(
+                "Por favor ingresa 6 valores separados por espacio (STR DEX CON INT WIS CHA). Ejemplo: 15 14 13 12 10 8"
+            )
+            return True
+        try:
+            values = [int(x) for x in parts]
+        except Exception:
+            await update.message.reply_text("Solo números, por favor.")
+            return True
+
+        abilities = dict(zip(ABILITIES, values))
+        if not validate_abilities(abilities):
+            await update.message.reply_text("Los valores deben estar entre 1 y 20.")
+            return True
+
+        state["data"]["abilities"] = abilities
+        state["step"] = 6
+        await ask_skills(update.message, state)
+        return True
+
+    return True  # cualquier texto mientras haya flujo activo se considera parte del builder
 
 # ================================================================
 # CALLBACKS DE BOTONES
@@ -73,8 +104,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state["data"]["race"] = race
         state["step"] = 3
         keyboard = [[InlineKeyboardButton(c, callback_data=f"class:{c}")] for c in CLASSES]
-        await query.message.edit_text(f"Raza elegida: {race}\n\nAhora elige tu clase:",
-                                      reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.message.edit_text(
+            f"Raza elegida: {race}\n\nAhora elige tu clase:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         return
 
     # Paso 3: clase
@@ -94,12 +127,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Paso 4: elección de modo de atributos
+    # Paso 4: selección de método de atributos
     if data.startswith("abilities:") and step == 4:
         mode = data.split(":", 1)[1]
         if mode == "manual":
             state["step"] = 5
-            await query.message.edit_text("Introduce tus 6 valores separados por espacio (STR DEX CON INT WIS CHA).\nEjemplo: 15 14 13 12 10 8")
+            await query.message.edit_text(
+                "Introduce tus 6 valores separados por espacio (STR DEX CON INT WIS CHA).\nEjemplo: 15 14 13 12 10 8"
+            )
             return
         if mode == "standard":
             state["data"]["abilities"] = dict(zip(ABILITIES, [15, 14, 13, 12, 10, 8]))
@@ -108,7 +143,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if mode == "pointbuy":
             state["step"] = 5
-            # Inicializamos todos los atributos en 8
             state["data"]["abilities"] = {a: 8 for a in ABILITIES}
             await show_pointbuy_menu(query.message, state)
             return
@@ -122,7 +156,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if data.startswith("inc:"):
             if current < 15:
-                # Calcula costo nuevo y revisa si alcanza
                 temp = ab.copy()
                 temp[ability] = current + 1
                 if points_remaining(temp) >= 0:
@@ -136,7 +169,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_pointbuy_menu(query.message, state)
         return
 
-    # Confirmar atributos
     if data == "pointbuy:confirm" and step == 5:
         ab = state["data"]["abilities"]
         if points_remaining(ab) < 0:
@@ -180,16 +212,15 @@ async def show_pointbuy_menu(message, state):
     keyboard = []
     for a in ABILITIES:
         keyboard.append([
-            InlineKeyboardButton(f"➖", callback_data=f"dec:{a}"),
+            InlineKeyboardButton("➖", callback_data=f"dec:{a}"),
             InlineKeyboardButton(f"{a}: {ab[a]}", callback_data="noop"),
-            InlineKeyboardButton(f"➕", callback_data=f"inc:{a}")
+            InlineKeyboardButton("➕", callback_data=f"inc:{a}")
         ])
     keyboard.append([InlineKeyboardButton("✅ Confirmar", callback_data="pointbuy:confirm")])
     text = f"🧮 Asigna tus puntos (27 disponibles)\nPuntos restantes: {remain}\n\nUsa ➕ o ➖ para ajustar cada atributo."
     await message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def ask_skills(message, state):
-    from random import sample
     keyboard = [[InlineKeyboardButton(s, callback_data=f"skill:{s}")] for s in SKILLS]
     msg = "Elige hasta 3 habilidades para tu personaje:"
     await message.edit_text(msg, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -199,7 +230,6 @@ async def ask_spells(message, state):
     spells = SPELLS_BY_CLASS.get(cls)
     if not spells:
         return await finish_character(message, state)
-
     keyboard = [[InlineKeyboardButton(s, callback_data=f"spell:{s}")] for s in spells]
     keyboard.append([InlineKeyboardButton("Sin más hechizos", callback_data="spell:none")])
     msg = f"Selecciona hasta 3 conjuros para tu {cls}:"
