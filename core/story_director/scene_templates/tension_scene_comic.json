@@ -1,0 +1,13 @@
+{
+  "title": "Situación incómodamente graciosa",
+  "description": "El peligro se vuelve ridículo por un instante. {cause}",
+  "scene_type": "tension",
+  "emotion_intensity": 0.5,
+  "environment": {
+    "lighting": "warm",
+    "weather": "clear",
+    "terrain": "urbano"
+  },
+  "available_actions": ["reír", "disimular", "improvisar"],
+  "tags": ["humor", "caos", "imprevisto"]
+}
