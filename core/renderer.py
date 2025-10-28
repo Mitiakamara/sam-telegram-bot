@@ -1,14 +1,16 @@
 import random
 from datetime import datetime
 
-from core.dialogue.auto_adaptive_dialogue import AutoAdaptiveDialogue
-
 # ================================================================
-# 🎨 RENDERER (Narrador de S.A.M.)
+# 🎨 RENDERER — Narrador dinámico de S.A.M.
 # ================================================================
 # Genera descripciones y respuestas narrativas adaptadas al tono
-# y emoción actuales. Integra Auto-Adaptive Dialogue (Fase 6.17).
+# emocional global, los blends activos y el estilo narrativo
+# evolutivo de la campaña.
 # ================================================================
+
+from core.dialogue.auto_adaptive_dialogue import AutoAdaptiveDialogue
+from core.renderer.style_evolution import NarrativeStyleEvolution
 
 
 class Renderer:
@@ -19,9 +21,10 @@ class Renderer:
     # ------------------------------------------------------------
     # 🏞️ Renderizar una nueva escena
     # ------------------------------------------------------------
-    def render_scene(self, scene, tone: str = "neutral") -> str:
+    def render_scene(self, scene, tone: str = "neutral", mood_manager=None):
         """
-        Genera la descripción inicial de una escena según el tono actual.
+        Genera la descripción inicial de una escena según el tono actual,
+        integrando estilo narrativo evolutivo y diálogos adaptativos.
         """
         tone_map = {
             "dark": [
@@ -49,22 +52,40 @@ class Renderer:
                 "Colores vivos y voces optimistas llenan el ambiente de energía.",
                 "Es un momento de calma y celebración en medio de la incertidumbre."
             ],
+            "tense": [
+                "El aire vibra con expectación, cada paso suena más fuerte de lo normal.",
+                "Una sensación de inminencia se apodera del ambiente.",
+                "Los corazones laten al ritmo del peligro que se aproxima."
+            ]
         }
 
         tone_descriptions = tone_map.get(tone, tone_map["neutral"])
         description = random.choice(tone_descriptions)
-        npc_line = self.adaptive_dialogue.generate_dialogue(random.choice(["Elandra", "Sir Aethan", "Kael"]))
 
-        result = f"{description}\n\n{npc_line}"
-        self.last_summary = description
-        return result
+        # Generar diálogo adaptativo de NPC
+        npc_line = self.adaptive_dialogue.generate_dialogue(
+            random.choice(["Elandra", "Sir Aethan", "Kael"])
+        )
+
+        base_text = f"{description}\n\n{npc_line}"
+
+        # Aplicar estilo narrativo evolutivo si hay MoodManager
+        if mood_manager:
+            style_engine = NarrativeStyleEvolution(mood_manager)
+            styled_text = style_engine.stylize_text(base_text)
+            self.last_summary = styled_text
+            return styled_text
+
+        self.last_summary = base_text
+        return base_text
 
     # ------------------------------------------------------------
-    # ⚔️ Renderizar respuesta a una acción
+    # ⚔️ Renderizar respuesta a una acción del jugador
     # ------------------------------------------------------------
-    def render_action(self, scene, action_text: str, tone: str = "neutral") -> str:
+    def render_action(self, scene, action_text: str, tone: str = "neutral", mood_manager=None):
         """
-        Crea una respuesta narrativa breve al input del jugador, influida por el tono global.
+        Crea una respuesta narrativa breve influida por el tono global y
+        ajustada al estilo narrativo actual.
         """
         tone_effects = {
             "dark": [
@@ -92,15 +113,26 @@ class Renderer:
                 f"El ambiente se llena de optimismo mientras ejecutas '{action_text}'.",
                 f"Tu acción '{action_text}' inspira al resto del grupo. 🌟"
             ],
+            "tense": [
+                f"'{action_text}' interrumpe el silencio, haciendo que todos contengan la respiración.",
+                f"Tu intento de '{action_text}' se siente precipitado, el aire se espesa.",
+                f"El más leve error al intentar '{action_text}' podría costar caro."
+            ]
         }
 
         result = random.choice(tone_effects.get(tone, tone_effects["neutral"]))
+
+        # Aplicar evolución estilística
+        if mood_manager:
+            style_engine = NarrativeStyleEvolution(mood_manager)
+            result = style_engine.stylize_text(result)
+
         self.last_summary = result
         return result
 
     # ------------------------------------------------------------
-    # 🧾 Resumen de la última escena
+    # 🧾 Último resumen narrativo
     # ------------------------------------------------------------
     def get_last_summary(self) -> str:
-        """Devuelve la última descripción registrada."""
+        """Devuelve la última descripción o reacción registrada."""
         return self.last_summary
