@@ -1,9 +1,9 @@
 # sam-telegram-bot/core/dice_roller/parser.py
 from core.dice_roller.roller import ability_check
+from core.dice_roller.intent_mapper import detect_attribute_from_text
 import json, os
 
 def find_character(name: str, directory="data/party"):
-    """Busca el archivo del personaje y devuelve sus datos."""
     path = os.path.join(directory, f"{name}.json")
     if not os.path.exists(path):
         return None
@@ -11,7 +11,6 @@ def find_character(name: str, directory="data/party"):
         return json.load(f)
 
 def normalize_ability(word: str) -> str:
-    """Traduce términos comunes a códigos SRD."""
     mapping = {
         "str": "STR", "strength": "STR", "fuerza": "STR",
         "dex": "DEX", "dexterity": "DEX", "destreza": "DEX",
@@ -20,25 +19,27 @@ def normalize_ability(word: str) -> str:
         "wis": "WIS", "wisdom": "WIS", "sabiduría": "WIS",
         "cha": "CHA", "charisma": "CHA", "carisma": "CHA",
     }
-    word = word.lower().strip()
-    return mapping.get(word)
+    return mapping.get(word.lower().strip())
 
-def perform_roll(player_name: str, ability_word: str):
-    """Ejecuta una tirada con base en el personaje y atributo."""
+def perform_roll(player_name: str, ability_word_or_text: str):
+    """Ejecuta una tirada con base en el texto o el nombre del atributo."""
     char_data = find_character(player_name)
     if not char_data:
         return f"⚠️ No encontré la ficha de {player_name}. Usa /createcharacter primero."
 
-    ab_code = normalize_ability(ability_word)
+    # Detectar si el input es una palabra o texto narrativo
+    ab_code = normalize_ability(ability_word_or_text)
     if not ab_code:
-        return "❓ No entiendo qué atributo quieres usar. Usa STR, DEX, CON, INT, WIS o CHA."
+        ab_code = detect_attribute_from_text(ability_word_or_text)
+    if not ab_code:
+        return "❓ No se entiende qué atributo usar. Ejemplo: 'forzar la puerta' → Fuerza."
 
     mods = char_data.get("modifiers", {})
     mod_value = mods.get(ab_code, 0)
     result = ability_check(ab_code, mod_value)
 
     msg = (
-        f"🎲 *{char_data['name']} lanza una prueba de {ab_code}:*\n"
+        f"🎲 *{char_data['name']} realiza una prueba de {ab_code}:*\n"
         f"`d20 ({result['d20']}) + {ab_code}({mod_value:+}) = {result['total']}`\n"
         f"➡️ {result['outcome']}"
     )
