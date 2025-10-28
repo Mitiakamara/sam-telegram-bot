@@ -1,0 +1,13 @@
+{
+  "title": "Triunfo inesperado",
+  "description": "Gracias a tu éxito, las puertas del destino se abren ante ti. {cause}",
+  "scene_type": "resolution",
+  "emotion_intensity": 0.9,
+  "environment": {
+    "lighting": "bright",
+    "weather": "clear",
+    "terrain": "safe"
+  },
+  "available_actions": ["explorar", "descansar", "celebrar"],
+  "tags": ["éxito", "avance", "esperanza"]
+}
