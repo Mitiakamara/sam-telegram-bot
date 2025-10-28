@@ -3,25 +3,28 @@ from datetime import datetime
 from core.scene_manager.tone_adapter import ToneAdapter
 from core.services.state_service import StateService
 from core.services.emotion_service import EmotionService
-#from core.story_director.story_director import StoryDirector
 
 
 class SceneManager:
     """
     Maneja las escenas narrativas activas, su persistencia y las transiciones.
-    Ahora integra el StoryDirector para decidir el siguiente nodo narrativo.
+    Ahora integra el StoryDirector de forma diferida para evitar importación circular.
     """
 
     def __init__(self):
         self.state_service = StateService()
         self.emotion_service = EmotionService()
         self.tone_adapter = ToneAdapter()
+
+        # 🔄 Importación diferida para evitar circular import
+        from core.story_director.story_director import StoryDirector
         self.story_director = StoryDirector(self, self.tone_adapter)
 
     # ==========================================================
     # 🔹 CREACIÓN Y ACTUALIZACIÓN DE ESCENAS
     # ==========================================================
-    def create_scene(self, title, description, scene_type="exploration", objectives=None, npcs=None, environment=None):
+    def create_scene(self, title, description, scene_type="exploration",
+                     objectives=None, npcs=None, environment=None):
         """Crea una nueva escena narrativa y la guarda en el estado actual."""
         scene = {
             "scene_id": datetime.utcnow().isoformat(),
@@ -38,7 +41,7 @@ class SceneManager:
             "transitions": []
         }
 
-        # Adaptar descripción inicial al tono base
+        # Evaluar emoción base y adaptar descripción
         emotion_level = self.emotion_service.evaluate_emotion(description)
         scene["emotion_intensity"] = emotion_level
         scene["description_adapted"] = self.tone_adapter.adapt_description(description, emotion_level)
@@ -61,15 +64,17 @@ class SceneManager:
         current_scene["status"] = "completed"
         current_scene["resolution"] = resolution_text
         current_scene["ended_at"] = datetime.utcnow().isoformat()
-
         self.state_service.save_scene(current_scene)
 
-        # Analizar emoción y tono final
+        # Analizar emoción final del texto de cierre
         final_emotion = self.emotion_service.evaluate_emotion(resolution_text)
         self.state_service.update_emotion_level(final_emotion)
 
         # 🔸 Generar la siguiente transición narrativa adaptativa
-        transition_text = self.story_director.generate_transition()
+        try:
+            transition_text = self.story_director.generate_transition()
+        except Exception as e:
+            transition_text = f"La historia continúa sin un evento guiado. ({e})"
 
         # Crear nueva escena a partir del nodo generado
         new_scene = {
