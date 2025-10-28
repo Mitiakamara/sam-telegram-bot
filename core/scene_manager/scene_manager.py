@@ -8,7 +8,7 @@ from core.services.emotion_service import EmotionService
 class SceneManager:
     """
     Maneja las escenas narrativas activas, su persistencia y las transiciones.
-    Ahora integra el StoryDirector de forma diferida para evitar importación circular.
+    Integra el StoryDirector de forma diferida para evitar importación circular.
     """
 
     def __init__(self):
@@ -32,7 +32,7 @@ class SceneManager:
             "description": description,
             "description_adapted": "",
             "scene_type": scene_type,
-            "emotion_intensity": 3,
+            "emotion_intensity": 0.5,
             "status": "active",
             "objectives": objectives or [],
             "npcs": npcs or [],
@@ -42,9 +42,19 @@ class SceneManager:
         }
 
         # Evaluar emoción base y adaptar descripción
-        emotion_level = self.emotion_service.evaluate_emotion(description)
-        scene["emotion_intensity"] = emotion_level
-        scene["description_adapted"] = self.tone_adapter.adapt_description(description, emotion_level)
+        emotion_label = self.emotion_service.evaluate_emotion(description)
+        scene["emotion"] = emotion_label if isinstance(emotion_label, str) else "neutral"
+        scene["emotion_intensity"] = (
+            emotion_label if isinstance(emotion_label, (float, int)) else 0.5
+        )
+
+        # ✅ Nuevo método adapt_tone
+        scene["description_adapted"] = self.tone_adapter.adapt_tone(
+            description=description,
+            emotion=scene["emotion"],
+            intensity=scene["emotion_intensity"],
+            genre="heroic"
+        )
 
         self.state_service.save_scene(scene)
         return scene
@@ -81,9 +91,15 @@ class SceneManager:
             "scene_id": datetime.utcnow().isoformat(),
             "title": "Nueva escena generada",
             "description": transition_text,
-            "description_adapted": self.tone_adapter.adapt_description(transition_text, final_emotion),
+            # ✅ Aquí también usamos adapt_tone
+            "description_adapted": self.tone_adapter.adapt_tone(
+                description=transition_text,
+                emotion="neutral",
+                intensity=0.5,
+                genre="heroic"
+            ),
             "scene_type": "narrative_transition",
-            "emotion_intensity": final_emotion,
+            "emotion_intensity": 0.5,
             "status": "active",
             "objectives": [],
             "npcs": [],
@@ -111,6 +127,6 @@ class SceneManager:
         summary = (
             f"🎭 *Escena actual:* {scene['title']}\n"
             f"📖 {scene['description_adapted']}\n"
-            f"💫 Intensidad emocional: {scene['emotion_intensity']}"
+            f"💫 Intensidad emocional: {scene.get('emotion_intensity', '?')}"
         )
         return summary
