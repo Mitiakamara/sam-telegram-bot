@@ -3,7 +3,7 @@ from datetime import datetime
 from core.scene_manager.tone_adapter import ToneAdapter
 from core.services.state_service import StateService
 from core.services.emotion_service import EmotionService
-from core.story_director.story_director import StoryDirector
+#from core.story_director.story_director import StoryDirector
 
 
 class SceneManager:
