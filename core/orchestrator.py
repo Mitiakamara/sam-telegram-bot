@@ -1,137 +1,174 @@
-# sam-telegram-bot/core/orchestrator.py
-"""
-Orchestrator
-------------
-Control central de la narrativa.
-Coordina la comunicación entre:
+# ==========================================================
+# 🎭 SAM Orchestrator – Fase 7.0: Dynamic World Events & Consequences
+# ==========================================================
+import logging
+from datetime import datetime
 
-- GameService (acciones del jugador)
-- SceneManager (gestión de escenas)
-- StoryDirector (motor narrativo adaptativo)
-- DirectorLink (puente entre resultados de juego y tono global)
-
-Mantiene la historia coherente, dinámica y emocionalmente reactiva.
-"""
-
-import asyncio
+# --- Core modules ---
 from core.scene_manager.scene_manager import SceneManager
-from core.services.game_service import GameService
-from core.services.state_service import StateService
+from core.story_director.story_director import StoryDirector
+from core.emotion.emotional_tracker import EmotionalTracker
 from core.renderer import render
-from core.story_director.director_link import DirectorLink
+
+# --- Dynamic world event system ---
+from core.world_events.event_generator import EventGenerator
+from core.world_events.consequence_resolver import ConsequenceResolver
+
+# ==========================================================
+# CONFIGURACIÓN BÁSICA
+# ==========================================================
+logger = logging.getLogger(__name__)
+EVENT_REGISTRY_PATH = "core/world_events/event_registry.json"
 
 
 class Orchestrator:
     """
-    Orquesta la narrativa entre el motor de juego (GameAPI),
-    el SceneManager (narrativa adaptativa) y la interfaz Telegram.
+    Orquestador principal de SAM: coordina escenas, emociones,
+    decisiones narrativas y ahora también eventos dinámicos del mundo.
     """
 
     def __init__(self):
+        # Subsistemas
         self.scene_manager = SceneManager()
-        self.game_service = GameService()
-        self.state_service = StateService()
-        self.story_director = self.scene_manager.story_director  # referencia directa
-        self.director_link = DirectorLink(self.story_director)
+        self.story_director = StoryDirector()
+        self.emotional_tracker = EmotionalTracker()
+
+        # Sistema de eventos dinámicos
+        self.event_generator = EventGenerator(EVENT_REGISTRY_PATH)
+        self.consequence_resolver = ConsequenceResolver()
+
+        # Estados de sesión
+        self.world_state = {
+            "time": "morning",
+            "environment": {"weather": "templado", "terrain": "bosque"},
+            "factions": {},
+            "reputation": 0,
+            "danger_zone": False,
+            "current_location": "colinas de Faerûn"
+        }
+        self.emotional_state = {
+            "tone": "neutral",
+            "morale": "estable",
+            "fear": 0.0,
+            "hope": 0.0,
+            "tension": 0.0
+        }
+        self.party_state = {
+            "average_level": 3,
+            "members": [],
+            "resources": {},
+            "reputation": 0
+        }
 
     # ==========================================================
-    # 🔹 PROCESAR MENSAJES DE JUGADOR
+    # MÉTODO PRINCIPAL DE PROCESO
     # ==========================================================
-    async def process_player_message(self, player_id: str, text: str):
+    def process_scene(self, user_input: str):
         """
-        Recibe mensajes del jugador, los analiza y decide la respuesta narrativa.
-        Si el texto indica avance o cierre, dispara el StoryDirector.
+        Procesa la entrada del jugador, genera la respuesta narrativa y
+        gestiona la escena actual del juego.
         """
-        text_lower = text.lower().strip()
+        logger.info(f"[Orchestrator] Entrada del jugador: {user_input}")
 
-        # Caso especial: el jugador pide avanzar
-        if text_lower in ["/continue", "continuar", "seguir", "avanzar"]:
-            return await self.handle_continue(player_id)
+        # 1️⃣ Actualizar emoción global según entrada
+        self.emotional_state = self.emotional_tracker.update_state(user_input)
 
-        # Caso general: procesar acción narrativa
-        active_scene = self.scene_manager.get_active_scene()
-        if not active_scene:
-            return render("No hay ninguna escena activa en este momento.")
-
-        # Enviar acción al GameService
-        game_response = await self.game_service.process_action(player_id, text)
-
-        # Integración narrativa adaptativa
-        if isinstance(game_response, dict):
-            scene_text = await self.director_link.process_game_result(game_response)
-        else:
-            # fallback: respuesta simple del motor de juego
-            scene_text = f"{active_scene['description_adapted']}\n\n{game_response}"
-
-        # Guardar estado
-        self.state_service.save_scene(active_scene)
-        return render(scene_text)
-
-    # ==========================================================
-    # 🔹 /CONTINUE – AVANZAR HISTORIA
-    # ==========================================================
-    async def handle_continue(self, player_id: str):
-        """
-        Cierra la escena actual y genera automáticamente la siguiente.
-        """
+        # 2️⃣ Obtener o crear escena actual
         current_scene = self.scene_manager.get_active_scene()
         if not current_scene:
-            return render("No hay ninguna escena activa para continuar.")
+            current_scene = self.scene_manager.create_initial_scene()
 
-        resolution_text = f"Los aventureros deciden avanzar. {current_scene['title']} llega a su fin."
-        transition_text = self.scene_manager.close_scene(resolution_text)
-
-        next_scene = self.scene_manager.get_active_scene()
-        if not next_scene:
-            return render("No se pudo generar la siguiente escena.")
-
-        message = (
-            f"🧭 *Transición narrativa:*\n{transition_text}\n\n"
-            f"🎭 *Nueva escena:* {next_scene['title']}\n"
-            f"📖 {next_scene['description_adapted']}"
-        )
-        return render(message)
-
-    # ==========================================================
-    # 🔹 INICIO DE NUEVA SESIÓN
-    # ==========================================================
-    async def start_new_session(self):
-        """
-        Reinicia el estado de la historia y crea una escena inicial.
-        """
-        intro_scene = self.scene_manager.create_scene(
-            title="El inicio de la aventura",
-            description=(
-                "Una brisa fría atraviesa el valle silencioso. "
-                "El grupo observa las ruinas antiguas a lo lejos, "
-                "sintiendo que su viaje apenas comienza."
-            ),
-            scene_type="exploration"
+        # 3️⃣ Usar el Story Director para adaptar la respuesta
+        narrative_output = self.story_director.process_input(
+            user_input, current_scene, self.emotional_state
         )
 
-        # ✅ Guardar explícitamente la primera escena activa
-        self.scene_manager.state_service.save_scene(intro_scene)
+        # 4️⃣ Renderizar respuesta narrativa para Telegram o interfaz
+        rendered_output = render(narrative_output)
 
-        return render(intro_scene["description_adapted"])
+        # 5️⃣ Evaluar cierre o transición de escena
+        if self.scene_manager.should_end_scene(narrative_output):
+            self._end_scene_hook()
 
-    # ==========================================================
-    # 🔹 RESUMEN ACTUAL
-    # ==========================================================
-    async def get_story_summary(self):
-        """Devuelve el resumen narrativo del estado actual."""
-        return render(self.scene_manager.summarize_scene())
+        return rendered_output
 
     # ==========================================================
-    # 🔹 FEEDBACK EMOCIONAL GLOBAL
+    # EVENTO DINÁMICO AL FINAL DE ESCENA
     # ==========================================================
-    def apply_feedback(self, emotion_label: str, delta: float = 0.1):
+    def _end_scene_hook(self):
         """
-        Redirige feedback emocional al StoryDirector / MoodManager.
-        Permite que las emociones del jugador afecten el tono global.
+        Cuando una escena termina, se dispara un evento mundial dinámico.
         """
-        if hasattr(self.story_director, "apply_feedback"):
-            try:
-                return self.story_director.apply_feedback(emotion_label, delta)
-            except Exception as e:
-                print(f"[⚠️ Orchestrator] Error aplicando feedback emocional: {e}")
-        return None
+        logger.info("[Orchestrator] Cerrando escena actual y generando evento mundial dinámico.")
+        self.scene_manager.end_scene()
+
+        # Generar evento
+        event = self.event_generator.generate_event(
+            self.world_state, self.emotional_state, self.party_state
+        )
+
+        # Aplicar consecuencias
+        self.world_state, self.emotional_state, self.party_state = self.consequence_resolver.apply_consequences(
+            event, self.world_state, self.emotional_state, self.party_state
+        )
+
+        # Log narrativo del evento
+        summary = (
+            f"\n🌍 *Evento Mundial:* {event.get('title','(sin título)')}\n"
+            f"{event.get('description','Sin descripción')}"
+        )
+        logger.info(summary)
+
+        # Registrar evento en histórico de mundo (temporal)
+        if "world_history" not in self.world_state:
+            self.world_state["world_history"] = []
+        self.world_state["world_history"].append({
+            "timestamp": datetime.utcnow().isoformat(),
+            "event": event.get("title"),
+            "description": event.get("description")
+        })
+
+        # Actualizar tono emocional tras evento
+        self._update_tone_from_emotion()
+
+    # ==========================================================
+    # MÉTODO AUXILIAR
+    # ==========================================================
+    def _update_tone_from_emotion(self):
+        """
+        Ajusta el tono global según los valores emocionales acumulados.
+        """
+        fear = self.emotional_state.get("fear", 0)
+        hope = self.emotional_state.get("hope", 0)
+        tension = self.emotional_state.get("tension", 0)
+
+        if fear > 0.6 and fear > hope:
+            self.emotional_state["tone"] = "tensión"
+        elif hope > 0.5:
+            self.emotional_state["tone"] = "esperanza"
+        elif tension > 0.4:
+            self.emotional_state["tone"] = "melancolía"
+        else:
+            self.emotional_state["tone"] = "neutral"
+
+        logger.info(f"[Orchestrator] Nuevo tono global: {self.emotional_state['tone']}")
+
+    # ==========================================================
+    # RESET / UTILIDADES
+    # ==========================================================
+    def reset_world(self):
+        """
+        Reinicia el estado del mundo (útil para nuevas campañas o testing).
+        """
+        logger.warning("[Orchestrator] Reiniciando mundo a estado base.")
+        self.__init__()
+
+    def export_state(self) -> dict:
+        """
+        Devuelve el estado completo del sistema (para persistencia o debugging).
+        """
+        return {
+            "world_state": self.world_state,
+            "emotional_state": self.emotional_state,
+            "party_state": self.party_state
+        }
