@@ -1,6 +1,7 @@
 # sam-telegram-bot/core/dice_roller/parser.py
 from core.dice_roller.roller import ability_check
 from core.dice_roller.intent_mapper import detect_attribute_from_text
+from core.dice_roller.narrator import narrative_reaction
 import json, os
 
 def find_character(name: str, directory="data/party"):
@@ -22,12 +23,10 @@ def normalize_ability(word: str) -> str:
     return mapping.get(word.lower().strip())
 
 def perform_roll(player_name: str, ability_word_or_text: str):
-    """Ejecuta una tirada con base en el texto o el nombre del atributo."""
     char_data = find_character(player_name)
     if not char_data:
         return f"⚠️ No encontré la ficha de {player_name}. Usa /createcharacter primero."
 
-    # Detectar si el input es una palabra o texto narrativo
     ab_code = normalize_ability(ability_word_or_text)
     if not ab_code:
         ab_code = detect_attribute_from_text(ability_word_or_text)
@@ -38,9 +37,19 @@ def perform_roll(player_name: str, ability_word_or_text: str):
     mod_value = mods.get(ab_code, 0)
     result = ability_check(ab_code, mod_value)
 
+    # 🧩 Narración contextual automática
+    narrative = narrative_reaction(
+        context_text=ability_word_or_text,
+        ability=ab_code,
+        total=result["total"],
+        d20=result["d20"],
+        outcome=result["outcome"]
+    )
+
     msg = (
         f"🎲 *{char_data['name']} realiza una prueba de {ab_code}:*\n"
         f"`d20 ({result['d20']}) + {ab_code}({mod_value:+}) = {result['total']}`\n"
-        f"➡️ {result['outcome']}"
+        f"➡️ {result['outcome']}\n\n"
+        f"_{narrative}_"
     )
     return msg
