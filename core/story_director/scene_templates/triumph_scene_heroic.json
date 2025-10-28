@@ -1,0 +1,13 @@
+{
+  "title": "Triunfo heroico",
+  "description": "Con valor y determinación, alcanzas un logro digno de canción. {cause}",
+  "scene_type": "resolution",
+  "emotion_intensity": 0.95,
+  "environment": {
+    "lighting": "radiant",
+    "weather": "clear",
+    "terrain": "elevated"
+  },
+  "available_actions": ["celebrar", "agradecer", "proclamar"],
+  "tags": ["heroico", "inspirador", "victoria"]
+}
