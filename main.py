@@ -167,6 +167,10 @@ api = FastAPI(title="SAM API")
 def health():
     return {"status": "ok", "system": "SAM Engine"}
 
+@api.get("/state")
+def state():
+    return sam.get_state()
+
 
 # ================================================================
 # 🚀 FUNCIÓN PRINCIPAL
@@ -199,27 +203,30 @@ async def main():
 
 
 # ================================================================
-# 🧠 EJECUCIÓN SEGURA EN RENDER / PYTHON 3.13
+# 🧠 EJECUCIÓN SEGURA PARA RENDER / PYTHON 3.13 (FINAL)
 # ================================================================
 if __name__ == "__main__":
-    try:
-        logger.info("🚀 Iniciando SAM en modo asíncrono seguro...")
+    import nest_asyncio
+    import uvloop
 
-        # --- Fija un loop funcional en entornos Render ---
+    # Habilita compatibilidad de loops anidados y acelera asyncio
+    nest_asyncio.apply()
+    uvloop.install()
+
+    logger.info("🚀 Iniciando SAM en modo asíncrono seguro (Render + PTB 21.6)...")
+
+    async def safe_launcher():
         try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.set_event_loop(asyncio.new_event_loop())
+            await main()
+        except Exception as e:
+            logger.error(f"[Launcher] Error en ejecución principal: {e}")
 
+    try:
+        # Ejecuta el bot con un nuevo loop limpio
+        asyncio.run(safe_launcher())
+    except RuntimeError as e:
+        # Fallback si el loop ya está activo (Render warmup)
+        logger.warning(f"[Loop Warning] {e} — utilizando fallback asyncio.create_task()")
         loop = asyncio.get_event_loop()
-
-        # Ejecuta la tarea principal sin bloquear Render
-        loop.create_task(main())
-
-        # Evita "loop already running" — ejecuta servidor persistente
-        loop.run_until_complete(asyncio.sleep(0.1))
-        logger.info("🔁 Loop de eventos iniciado correctamente.")
+        loop.create_task(safe_launcher())
         loop.run_forever()
-
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("🛑 SAM detenido manualmente.")
