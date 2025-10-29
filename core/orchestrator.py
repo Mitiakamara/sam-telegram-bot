@@ -1,154 +1,149 @@
-# ================================================================
-# 🧠 ORCHESTRATOR
-# ================================================================
-# Núcleo maestro de SAM: coordina los subsistemas narrativos.
-# Se encarga de:
-#  - Inicializar los módulos del motor narrativo
-#  - Gestionar el flujo de escenas
-#  - Monitorear el estado emocional y de campaña
-#  - Guardar y restaurar el estado global del mundo
-#
-# Compatible con: Fase 7.0 – Dynamic World Events & Consequences
-# ================================================================
+# =============================================================
+# SAM Orchestrator - Remote Mode (Render Microservices)
+# =============================================================
+# Coordina toda la narrativa de SAM conectando con GameAPI y SRDService
+# mediante HTTP remoto. No almacena archivos locales.
+# =============================================================
 
+import asyncio
+import httpx
 import logging
-from datetime import datetime
-
-# ------------------------------------------------------------
-# Importación de módulos principales
-# ------------------------------------------------------------
-from core.scene_manager.scene_manager import SceneManager
-from core.emotion.emotional_tracker import EmotionalTracker
-from core.story_director.story_director import StoryDirector
-from core.persistence.state_persistence import StatePersistence
-
-logger = logging.getLogger(__name__)
+from typing import Dict, Any, Optional
 
 
-# ================================================================
-# 🧩 CLASE PRINCIPAL
-# ================================================================
 class Orchestrator:
-    def __init__(self):
-        logger.info("[Orchestrator] Inicializando módulos narrativos...")
+    """
+    El Orchestrator actúa como el "director narrativo" principal de SAM.
+    Gestiona el flujo emocional, la narrativa y las interacciones del jugador,
+    delegando lógica y datos a los servicios remotos (GameAPI y SRDService).
+    """
 
-        # Inicialización de subsistemas
-        self.scene_manager = SceneManager()
-        self.emotional_tracker = EmotionalTracker()
-        self.story_director = StoryDirector()
-        self.persistence = StatePersistence()
+    def __init__(
+        self,
+        gameapi_url: str = "https://sam-gameapi.onrender.com",
+        srdservice_url: str = "https://sam-srdservice.onrender.com",
+        timeout: int = 20,
+    ):
+        self.log = logging.getLogger("core.orchestrator")
+        self.gameapi_url = gameapi_url.rstrip("/")
+        self.srdservice_url = srdservice_url.rstrip("/")
+        self.timeout = timeout
 
-        # Estado actual
-        self.current_scene = None
-        self.current_state = {}
+        self.state: Dict[str, Any] = {}
+        self.session = httpx.AsyncClient(timeout=self.timeout)
 
-        logger.info("[Orchestrator] Iniciando nuevo mundo narrativo.")
-        self.reset_world()
+        self.log.info("[Orchestrator] Inicializando módulos narrativos...")
+        self._initialized = True
 
-    # ------------------------------------------------------------
-    # 🌍 Reinicio total del mundo narrativo
-    # ------------------------------------------------------------
-    def reset_world(self):
+        # Inicializa el mundo remoto
+        asyncio.get_event_loop().create_task(self.reset_world())
+
+    # ---------------------------------------------------------
+    # 🌍 Funciones principales
+    # ---------------------------------------------------------
+    async def reset_world(self) -> None:
         """
-        Reinicia completamente el mundo narrativo y guarda su estado inicial.
+        Reinicia el estado narrativo del mundo en GameAPI remoto.
         """
-        logger.warning("[Orchestrator] Reiniciando mundo narrativo.")
+        self.log.warning("[Orchestrator] Reiniciando mundo narrativo remoto...")
+        try:
+            response = await self.session.post(f"{self.gameapi_url}/reset")
+            response.raise_for_status()
+            self.state = response.json()
+            self.log.info("[Orchestrator] Mundo remoto reiniciado correctamente.")
+        except Exception as e:
+            self.log.error(f"[Orchestrator] Error al reiniciar mundo remoto: {e}")
+            self.state = {}
 
-        # Reinicio de módulos
-        self.scene_manager.reset_scenes()
-        self.emotional_tracker.reset()
-
-        # Estado inicial
-        self.current_scene = self.scene_manager.get_current_scene()
-
-        scene_state = {"scene": self.current_scene.to_dict()}
-        emotional_state = self.emotional_tracker.get_current_state()
-        party_state = {"members": []}  # aún no hay jugadores al iniciar
-
-        # Persistir estado inicial
-        self.persistence.save_state(scene_state, emotional_state, party_state)
-        logger.info("[Orchestrator] Mundo narrativo reiniciado y persistido correctamente.")
-
-    # ------------------------------------------------------------
-    # 🎭 Procesar acción del jugador
-    # ------------------------------------------------------------
-    def process_player_action(self, player_input: str):
+    async def get_state(self) -> Dict[str, Any]:
         """
-        Procesa la acción del jugador, genera la siguiente escena
-        y actualiza las emociones globales.
+        Obtiene el estado narrativo actual desde GameAPI remoto.
         """
-        logger.info(f"[Orchestrator] Acción del jugador: {player_input}")
+        try:
+            response = await self.session.get(f"{self.gameapi_url}/state")
+            response.raise_for_status()
+            self.state = response.json()
+            return self.state
+        except Exception as e:
+            self.log.error(f"[Orchestrator] Error al obtener estado: {e}")
+            return self.state or {}
 
-        # Evaluar éxito aproximado
-        success_score = self.scene_manager.estimate_player_success(player_input)
-
-        # Evaluar resultado emocional y narrativo
-        outcome = self.story_director.evaluate_scene_outcome(success_score)
-        next_scene_type = self.story_director.decide_next_scene_type()
-
-        # Actualizar emociones según resultado
-        if outcome == "success":
-            self.emotional_tracker.record_emotion("joy", 0.8)
-        elif outcome == "failure":
-            self.emotional_tracker.record_emotion("fear", 0.6)
-        else:
-            self.emotional_tracker.record_emotion("tension", 0.5)
-
-        # Crear siguiente escena
-        next_scene_data = self.scene_manager.generate_scene_description(player_input, next_scene_type)
-        self.current_scene = self.scene_manager.get_current_scene()
-
-        # Guardar nuevo estado
-        scene_state = {"scene": self.current_scene.to_dict()}
-        emotional_state = self.emotional_tracker.get_current_state()
-        party_state = {"members": []}  # temporal hasta integrar party_manager
-
-        self.persistence.save_state(scene_state, emotional_state, party_state)
-
-        logger.info(f"[Orchestrator] Nueva escena generada: {next_scene_data['title']}")
-        return {
-            "scene": next_scene_data,
-            "emotion": emotional_state,
-            "outcome": outcome,
-        }
-
-    # ------------------------------------------------------------
-    # 📖 Obtener estado global
-    # ------------------------------------------------------------
-    def get_state(self):
+    async def process_player_action(self, action_text: str) -> Dict[str, Any]:
         """
-        Devuelve un resumen del estado global actual.
+        Envía la acción del jugador al GameAPI remoto y obtiene la respuesta narrativa.
         """
-        return {
-            "scene": self.current_scene.to_dict() if self.current_scene else None,
-            "emotion": self.emotional_tracker.get_current_state(),
-            "timestamp": datetime.utcnow().isoformat(),
-        }
+        payload = {"action": action_text}
 
-    # ------------------------------------------------------------
-    # 💾 Guardar estado manualmente
-    # ------------------------------------------------------------
-    def save(self):
+        try:
+            self.log.info(f"[Orchestrator] Enviando acción: {action_text}")
+            response = await self.session.post(f"{self.gameapi_url}/action", json=payload)
+            response.raise_for_status()
+            result = response.json()
+            self.state = result
+            return result
+        except httpx.HTTPStatusError as e:
+            self.log.error(f"[GameAPI] Error HTTP {e.response.status_code}: {e.response.text}")
+        except httpx.RequestError as e:
+            self.log.error(f"[GameAPI] Error de conexión: {e}")
+        except Exception as e:
+            self.log.exception(f"[GameAPI] Excepción inesperada: {e}")
+
+        return {"error": "No se pudo procesar la acción.", "scene": {}, "emotion": {}}
+
+    # ---------------------------------------------------------
+    # 📖 SRD Queries (datos del sistema de reglas)
+    # ---------------------------------------------------------
+    async def query_srd(self, query: str) -> Optional[Dict[str, Any]]:
         """
-        Guarda manualmente el estado actual del mundo.
+        Consulta el SRDService remoto (razas, clases, conjuros, etc.).
         """
-        scene_state = {"scene": self.current_scene.to_dict()}
-        emotional_state = self.emotional_tracker.get_current_state()
-        party_state = {"members": []}
+        try:
+            response = await self.session.post(
+                f"{self.srdservice_url}/query",
+                json={"query": query},
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.log.error(f"[SRDService] Error en query SRD: {e}")
+            return None
 
-        self.persistence.save_state(scene_state, emotional_state, party_state)
-        logger.info("[Orchestrator] Estado del mundo guardado manualmente.")
+    # ---------------------------------------------------------
+    # 💬 Generación narrativa y tono
+    # ---------------------------------------------------------
+    async def generate_scene_description(self) -> str:
+        """
+        Solicita una descripción narrativa adaptativa al GameAPI remoto.
+        """
+        try:
+            response = await self.session.get(f"{self.gameapi_url}/narrate")
+            response.raise_for_status()
+            data = response.json()
+            description = data.get("description", "")
+            self.log.info(f"[Orchestrator] Narrativa recibida: {description[:80]}...")
+            return description
+        except Exception as e:
+            self.log.error(f"[Narrative] Error al generar descripción: {e}")
+            return "El entorno se mantiene en silencio, a la espera de nuevas acciones."
 
+    # ---------------------------------------------------------
+    # 🧹 Limpieza
+    # ---------------------------------------------------------
+    async def close(self):
+        """
+        Cierra la sesión HTTP asíncrona.
+        """
+        await self.session.aclose()
+        self.log.info("[Orchestrator] Sesión HTTP cerrada correctamente.")
 
-# ------------------------------------------------------------
-# 🧪 DEMO LOCAL
-# ------------------------------------------------------------
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    sam = Orchestrator()
-    print("🎬 Mundo narrativo inicializado correctamente.\n")
+    # ---------------------------------------------------------
+    # 🧠 Helpers sincrónicos (para compatibilidad)
+    # ---------------------------------------------------------
+    def reset_world_sync(self):
+        asyncio.get_event_loop().run_until_complete(self.reset_world())
 
-    # Simular acción del jugador
-    result = sam.process_player_action("Observo las ruinas y preparo mi arco.")
-    print("\nResultado de acción:")
-    print(result)
+    def process_player_action_sync(self, action_text: str):
+        return asyncio.get_event_loop().run_until_complete(self.process_player_action(action_text))
+
+    def get_state_sync(self):
+        return asyncio.get_event_loop().run_until_complete(self.get_state())
