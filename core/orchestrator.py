@@ -16,7 +16,7 @@ from datetime import datetime
 # Core components
 from core.scene_manager.scene_manager import SceneManager
 from core.emotion.emotional_tracker import EmotionalTracker
-from core.story_director import StoryDirector
+from core.story_director.story_director import StoryDirector  # ✅ FIXED import
 from core.renderer import render
 
 # Persistence
