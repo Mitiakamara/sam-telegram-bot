@@ -1,124 +1,143 @@
 # ================================================================
-# 🧠 ORCHESTRATOR (SAM Core)
+# 🧠 ORCHESTRATOR
 # ================================================================
-# Controlador central del flujo narrativo.
-# Coordina el SceneManager, StoryDirector, EmotionalTracker y Renderer.
+# Núcleo maestro de SAM: coordina los subsistemas narrativos.
+# Se encarga de:
+#  - Inicializar los módulos del motor narrativo
+#  - Gestionar el flujo de escenas
+#  - Monitorear el estado emocional y de campaña
+#  - Guardar y restaurar el estado global del mundo
 #
-# Funciones principales:
-#   - Recibir entradas del jugador
-#   - Procesar el estado de la escena
-#   - Generar una nueva respuesta narrativa coherente
+# Compatible con: Fase 7.0 – Dynamic World Events & Consequences
 # ================================================================
 
 import logging
 from datetime import datetime
 
-# Core components
+# ------------------------------------------------------------
+# Importación de módulos principales
+# ------------------------------------------------------------
 from core.scene_manager.scene_manager import SceneManager
 from core.emotion.emotional_tracker import EmotionalTracker
-from core.story_director.story_director import StoryDirector  # ✅ FIXED import
-from core.renderer import render
-
-# Persistence
+from core.story_director.story_director import StoryDirector
 from core.persistence.state_persistence import StatePersistence
-
-# Models
-from core.models.telegram_msg import TelegramMessage
 
 logger = logging.getLogger(__name__)
 
 
+# ================================================================
+# 🧩 CLASE PRINCIPAL
+# ================================================================
 class Orchestrator:
-    """
-    Coordina los módulos narrativos y maneja el ciclo principal de SAM.
-    """
-
     def __init__(self):
         logger.info("[Orchestrator] Inicializando módulos narrativos...")
+
+        # Inicialización de subsistemas
         self.scene_manager = SceneManager()
-        self.story_director = StoryDirector()
         self.emotional_tracker = EmotionalTracker()
+        self.story_director = StoryDirector()
         self.persistence = StatePersistence()
 
-        # Estado base
+        # Estado actual
         self.current_scene = None
-        self.last_response = None
+        self.current_state = {}
 
         logger.info("[Orchestrator] Iniciando nuevo mundo narrativo.")
         self.reset_world()
 
     # ------------------------------------------------------------
-    # 🌍 Reinicio del mundo narrativo
+    # 🌍 Reinicio total del mundo narrativo
     # ------------------------------------------------------------
     def reset_world(self):
+        """
+        Reinicia completamente el mundo narrativo y guarda su estado inicial.
+        """
         logger.warning("[Orchestrator] Reiniciando mundo narrativo.")
+
+        # Reinicio de módulos
         self.scene_manager.reset_scenes()
-        self.current_scene = self.scene_manager.create_initial_scene()
         self.emotional_tracker.reset()
-        self.persistence.save_state({"scene": self.current_scene})
-        self.last_response = None
+
+        # Estado inicial
+        self.current_scene = self.scene_manager.get_current_scene()
+
+        scene_state = {"scene": self.current_scene.to_dict()}
+        emotional_state = self.emotional_tracker.get_current_state()
+        party_state = {"members": []}  # aún no hay jugadores al iniciar
+
+        # Persistir estado inicial
+        self.persistence.save_state(scene_state, emotional_state, party_state)
+        logger.info("[Orchestrator] Mundo narrativo reiniciado y persistido correctamente.")
 
     # ------------------------------------------------------------
-    # 💬 Procesamiento de entrada del jugador
+    # 🎭 Procesar acción del jugador
     # ------------------------------------------------------------
-    def process_scene(self, player_input: str) -> TelegramMessage:
+    def process_player_action(self, player_input: str):
         """
-        Procesa una acción o diálogo del jugador.
-        Devuelve un objeto TelegramMessage renderizado.
+        Procesa la acción del jugador, genera la siguiente escena
+        y actualiza las emociones globales.
         """
+        logger.info(f"[Orchestrator] Acción del jugador: {player_input}")
 
-        logger.info(f"[Orchestrator] Entrada del jugador: {player_input}")
+        # Evaluar éxito aproximado
+        success_score = self.scene_manager.estimate_player_success(player_input)
 
-        # 1. Registrar emoción derivada de la acción
-        self.emotional_tracker.track_emotion_from_input(player_input)
-
-        # 2. Evaluar tipo de próxima escena
+        # Evaluar resultado emocional y narrativo
+        outcome = self.story_director.evaluate_scene_outcome(success_score)
         next_scene_type = self.story_director.decide_next_scene_type()
 
-        # 3. Generar salida narrativa (placeholder básico)
-        narrative_output = self.scene_manager.generate_scene_description(
-            player_input=player_input,
-            scene_type=next_scene_type
-        )
-
-        # 4. Evaluar resultado narrativo (éxito / fracaso / mixto)
-        player_success = self.scene_manager.estimate_player_success(player_input)
-        outcome = self.story_director.evaluate_scene_outcome(player_success)
-        narrative_output["outcome"] = outcome
-
-        # 5. Guardar estado actualizado
-        self.persistence.save_state({
-            "last_input": player_input,
-            "scene_type": next_scene_type,
-            "outcome": outcome,
-            "timestamp": datetime.utcnow().isoformat()
-        })
-
-        # 6. Renderizar salida final (TelegramMessage)
-        rendered_output = render(narrative_output)
-        self.last_response = rendered_output
-
-        return rendered_output
-
-    # ------------------------------------------------------------
-    # 🧩 Integración con comandos especiales (/createcharacter, etc.)
-    # ------------------------------------------------------------
-    def handle_command(self, command: str, args=None) -> str:
-        """
-        Procesa comandos específicos del sistema (join, reset, etc.)
-        """
-        if command == "/reset":
-            self.reset_world()
-            return "🌍 El mundo ha sido reiniciado. La historia comienza de nuevo..."
-        elif command == "/join":
-            return "🧙‍♂️ Te unes a la campaña. Prepara tu hoja de personaje."
-        elif command == "/createcharacter":
-            return (
-                "📜 Para crear tu personaje, describe su nombre, raza y clase. "
-                "Por ejemplo: 'Mi personaje es un elfo mago llamado Aerendir'."
-            )
+        # Actualizar emociones según resultado
+        if outcome == "success":
+            self.emotional_tracker.record_emotion("joy", 0.8)
+        elif outcome == "failure":
+            self.emotional_tracker.record_emotion("fear", 0.6)
         else:
-            return "🤔 No reconozco ese comando. Usa /reset, /join o /createcharacter."
+            self.emotional_tracker.record_emotion("tension", 0.5)
+
+        # Crear siguiente escena
+        next_scene_data = self.scene_manager.generate_scene_description(player_input, next_scene_type)
+        self.current_scene = self.scene_manager.get_current_scene()
+
+        # Guardar nuevo estado
+        scene_state = {"scene": self.current_scene.to_dict()}
+        emotional_state = self.emotional_tracker.get_current_state()
+        party_state = {"members": []}  # temporal hasta integrar party_manager
+
+        self.persistence.save_state(scene_state, emotional_state, party_state)
+
+        logger.info(f"[Orchestrator] Nueva escena generada: {next_scene_data['title']}")
+        return {
+            "scene": next_scene_data,
+            "emotion": emotional_state,
+            "outcome": outcome,
+        }
+
+    # ------------------------------------------------------------
+    # 📖 Obtener estado global
+    # ------------------------------------------------------------
+    def get_state(self):
+        """
+        Devuelve un resumen del estado global actual.
+        """
+        return {
+            "scene": self.current_scene.to_dict() if self.current_scene else None,
+            "emotion": self.emotional_tracker.get_current_state(),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    # ------------------------------------------------------------
+    # 💾 Guardar estado manualmente
+    # ------------------------------------------------------------
+    def save(self):
+        """
+        Guarda manualmente el estado actual del mundo.
+        """
+        scene_state = {"scene": self.current_scene.to_dict()}
+        emotional_state = self.emotional_tracker.get_current_state()
+        party_state = {"members": []}
+
+        self.persistence.save_state(scene_state, emotional_state, party_state)
+        logger.info("[Orchestrator] Estado del mundo guardado manualmente.")
 
 
 # ------------------------------------------------------------
@@ -127,8 +146,9 @@ class Orchestrator:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     sam = Orchestrator()
+    print("🎬 Mundo narrativo inicializado correctamente.\n")
 
-    print("\n🎮 SAM Demo:")
-    print("-------------")
-    response = sam.process_scene("Corro hacia la puerta")
-    print(f"\n🧾 Mensaje renderizado:\n{response.text}\n")
+    # Simular acción del jugador
+    result = sam.process_player_action("Observo las ruinas y preparo mi arco.")
+    print("\nResultado de acción:")
+    print(result)
