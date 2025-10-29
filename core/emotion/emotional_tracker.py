@@ -124,3 +124,11 @@ class EmotionalTracker:
             EmotionalTracker._save_history({"history": []})
             return True
         return False
+# ================================================================
+# 🔄 Compatibilidad retroactiva (para imports antiguos)
+# ================================================================
+get_last_scene = EmotionalTracker.get_last_scene
+log_scene = EmotionalTracker.log_scene
+get_emotional_summary = EmotionalTracker.get_emotional_summary
+get_emotional_trend = EmotionalTracker.get_emotional_trend
+reset_history = EmotionalTracker.reset_history
