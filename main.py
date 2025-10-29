@@ -2,12 +2,11 @@
 # 🤖 SAM - Storytelling Adventure Machine
 # ================================================================
 # Archivo principal del bot de Telegram.
-# Inicia SAM, maneja comandos y enruta mensajes al Orchestrator.
+# Maneja comandos, mensajes y conecta con el Orchestrator.
 #
 # Compatible con:
 #   - Fase 7.0: Dynamic World Events & Consequences
-#   - Python 3.13 / Render
-#   - Telegram Bot API v21.6
+#   - Python 3.13 / Render / Telegram Bot API 21.6
 # ================================================================
 
 import os
@@ -44,9 +43,8 @@ sam = Orchestrator()
 # ================================================================
 # 🧭 COMANDOS PRINCIPALES
 # ================================================================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /start — Inicia la sesión de campaña."""
+    """Comando /start — Inicia la sesión."""
     logger.info("[Jugador] Ha iniciado la campaña con /start")
     await update.message.reply_text(
         "🎲 ¡Bienvenido aventurero! Soy *SAM*, tu narrador de historias dinámicas.\n"
@@ -56,7 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /help — Muestra ayuda básica."""
+    """Comando /help."""
     await update.message.reply_text(
         "📜 *Comandos disponibles:*\n"
         "/begin – Iniciar una nueva aventura\n"
@@ -68,7 +66,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /begin — Inicia la primera escena."""
+    """Comando /begin — Crea la primera escena."""
     logger.info("[Jugador] Ha comenzado una nueva aventura con /begin")
     sam.reset_world()
     state = sam.get_state()
@@ -83,7 +81,7 @@ async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /reset — Reinicia la sesión de campaña."""
+    """Comando /reset — Reinicia la sesión."""
     logger.info("[Jugador] Solicitó reinicio del mundo narrativo.")
     sam.reset_world()
     await update.message.reply_text(
@@ -93,7 +91,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /state — Muestra el estado actual del mundo."""
+    """Comando /state — Muestra estado actual."""
     state = sam.get_state()
     scene = state.get("scene", {})
     emotion = state.get("emotion", {})
@@ -112,7 +110,7 @@ async def show_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 💬 GESTOR DE MENSAJES LIBRES
 # ================================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Procesa entradas naturales del jugador."""
+    """Procesa texto libre del jugador."""
     user_input = update.message.text.strip()
     logger.info(f"[Jugador] {user_input}")
 
@@ -128,7 +126,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎭 Emoción actual: {emotion.get('tone', 'neutral')} ({emotion.get('intensity', 0)})\n"
             f"⚖️ Resultado narrativo: {outcome}"
         )
-
         await update.message.reply_text(response, parse_mode="Markdown")
 
     except Exception as e:
@@ -143,7 +140,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 🚀 FUNCIÓN PRINCIPAL
 # ================================================================
 async def main():
-    """Punto de entrada principal del bot."""
+    """Punto de entrada del bot."""
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
@@ -151,18 +148,16 @@ async def main():
         .build()
     )
 
-    # Comandos básicos
+    # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("begin", begin))
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CommandHandler("state", show_state))
-
-    # Mensajes naturales
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("🤖 SAM listo y en ejecución (modo campaña).")
-    await app.run_polling()
+    await app.run_polling(close_loop=False)  # 🔒 evita cerrar el loop
 
 
 # ================================================================
@@ -170,18 +165,17 @@ async def main():
 # ================================================================
 if __name__ == "__main__":
     try:
+        logger.info("🚀 Iniciando SAM en modo asíncrono seguro...")
+
+        # Workaround Python 3.13: asegura un loop válido
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+
         loop = asyncio.get_event_loop()
-        if loop.is_running():
-            logger.warning("⚙️ Loop ya activo, ejecutando SAM en modo no bloqueante.")
-            loop.create_task(main())
-            loop.run_forever()
-        else:
-            loop.run_until_complete(main())
+        loop.create_task(main())
+        loop.run_forever()
+
     except (KeyboardInterrupt, SystemExit):
         logger.info("🛑 SAM detenido manualmente.")
-    except RuntimeError as e:
-        if "already running" in str(e):
-            logger.warning("⚠️ SAM ya está corriendo en un loop activo, usando alternativa segura.")
-            asyncio.get_event_loop().create_task(main())
-        else:
-            raise
