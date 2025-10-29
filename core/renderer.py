@@ -10,7 +10,7 @@ from datetime import datetime
 # ================================================================
 
 from core.dialogue.auto_adaptive_dialogue import AutoAdaptiveDialogue
-from core.renderer.style_evolution import NarrativeStyleEvolution
+#from core.renderer.style_evolution import NarrativeStyleEvolution
 
 
 class Renderer:
