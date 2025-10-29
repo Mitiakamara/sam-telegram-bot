@@ -40,4 +40,4 @@ def render(scene_description):
 
     logger.info(f"[Renderer] Mensaje final renderizado:\n{message_text}")
 
-    return TelegramMessage(message_text)
+    return TelegramMessage(text=message_text)
