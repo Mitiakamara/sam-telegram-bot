@@ -1,63 +1,43 @@
-# ================================================================
-# 🪄 SAM – Renderer (Modo Campaña Pre-Creada)
-# ================================================================
-# Convierte los datos narrativos generados por el Orchestrator
-# en texto limpio y presentable para el usuario (Telegram).
-# ================================================================
-
-import textwrap
 import logging
+from core.models.telegram_msg import TelegramMessage
 
 logger = logging.getLogger(__name__)
 
-# ------------------------------------------------
-# 🔧 Función principal
-# ------------------------------------------------
-def render(scene_description: str, tone: str = "neutral", emotion: str = "neutral") -> str:
+# ================================================================
+# 🎨 RENDERER – Adaptador de salida narrativa para Telegram
+# ================================================================
+
+def render(scene_description):
     """
-    Recibe un bloque narrativo y lo adapta a formato jugable.
-    Ajusta estilo y tono según la emoción dominante.
+    Convierte la salida narrativa o estructurada en un mensaje TelegramMessage.
+    Acepta tanto strings como diccionarios estructurados.
     """
 
-    if not scene_description:
-        return "Silencio… (no hay descripción disponible)."
+    # 1️⃣ Manejar dict o string
+    if isinstance(scene_description, dict):
+        text = scene_description.get("description", "")
+        next_type = scene_description.get("next_scene_type", "")
+        tone = scene_description.get("tone", "")
+        emotion = scene_description.get("dominant_emotion", "")
+        outcome = scene_description.get("outcome", "")
+    else:
+        text = str(scene_description)
+        next_type = tone = emotion = outcome = ""
 
-    # Normalizar texto
-    scene_description = scene_description.strip()
-    scene_description = textwrap.fill(scene_description, width=100)
+    # 2️⃣ Asegurar que sea texto limpio
+    text = text.strip() if isinstance(text, str) else str(text)
 
-    # Adaptar según tono o emoción global
-    tone_prefix = {
-        "hopeful": "✨ Con un aire de esperanza,",
-        "dark": "🌒 La atmósfera se vuelve sombría:",
-        "tense": "⚡ Una tensión invisible recorre el ambiente:",
-        "calm": "🌿 En calma y silencio,",
-        "neutral": ""
-    }.get(tone, "")
+    # 3️⃣ Construir mensaje Telegram
+    message_text = f"{text}\n\n"
+    if next_type:
+        message_text += f"🧭 Tipo de próxima escena: *{next_type}*\n"
+    if tone:
+        message_text += f"🎭 Tono: *{tone}*\n"
+    if emotion:
+        message_text += f"💫 Emoción dominante: *{emotion}*\n"
+    if outcome:
+        message_text += f"⚖️ Resultado: *{outcome}*"
 
-    emotion_suffix = {
-        "joy": "😊 Un leve optimismo se percibe entre los aventureros.",
-        "fear": "😨 Un escalofrío recorre sus espaldas.",
-        "anger": "🔥 La frustración late en cada respiración.",
-        "sadness": "😔 El silencio pesa sobre sus corazones.",
-        "surprise": "😲 Todo ocurre más rápido de lo esperado.",
-        "neutral": ""
-    }.get(emotion, "")
+    logger.info(f"[Renderer] Mensaje final renderizado:\n{message_text}")
 
-    output = f"{tone_prefix} {scene_description} {emotion_suffix}".strip()
-    logger.info(f"[Renderer] Escena renderizada con tono='{tone}', emoción='{emotion}'")
-    return output
-
-
-# ------------------------------------------------
-# 🧩 Compatibilidad con Orchestrator
-# ------------------------------------------------
-def render_message(scene_data: dict) -> str:
-    """
-    Renderiza una escena completa a texto jugable.
-    """
-    description = scene_data.get("description", "")
-    tone = scene_data.get("tone", "neutral")
-    emotion = scene_data.get("dominant_emotion", "neutral")
-
-    return render(description, tone=tone, emotion=emotion)
+    return TelegramMessage(message_text)
