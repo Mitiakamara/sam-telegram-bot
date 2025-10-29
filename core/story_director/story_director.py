@@ -105,6 +105,36 @@ class StoryDirector:
         )
         return prompt
 
+    # ------------------------------------------------------------
+    # 🧠 Interfaz principal para Orchestrator
+    # ------------------------------------------------------------
+    def process_input(self, user_input: str, current_scene: dict, emotional_state: dict):
+        """
+        Procesa la entrada del jugador y genera la siguiente escena adaptada.
+        Este método sirve como punto de entrada unificado para el Orchestrator.
+        """
+        # 1️⃣ Analiza el estado emocional y decide tipo de próxima escena
+        next_type = self.decide_next_scene_type()
+
+        # 2️⃣ Simula resultado de escena con un valor aleatorio (luego se podrá vincular con tiradas)
+        player_success = random.uniform(0.2, 0.9)
+        outcome = self.evaluate_scene_outcome(player_success)
+
+        # 3️⃣ Genera resumen adaptativo
+        class TempScene:
+            title = current_scene.get("title", "Escena sin título")
+
+        narrative_prompt = self.generate_summary_prompt(TempScene())
+
+        # 4️⃣ Crea salida narrativa para el Orchestrator
+        return {
+            "description": narrative_prompt,
+            "next_scene_type": next_type,
+            "outcome": outcome,
+            "tone": emotional_state.get("tone", "neutral"),
+            "dominant_emotion": emotional_state.get("dominant_emotion", "neutral"),
+        }
+
 
 # ------------------------------------------------------------
 # 🧪 DEMO LOCAL
