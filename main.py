@@ -6,7 +6,8 @@
 #
 # Compatible con:
 #   - Fase 7.0: Dynamic World Events & Consequences
-#   - Sistema emocional y narrativo persistente
+#   - Python 3.13 / Render
+#   - Telegram Bot API v21.6
 # ================================================================
 
 import os
@@ -72,8 +73,8 @@ async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sam.reset_world()
     state = sam.get_state()
 
-    scene_title = state["scene"]["title"] if state["scene"] else "Escena desconocida"
-    description = state["scene"]["description"] if state["scene"] else "Sin descripción disponible."
+    scene_title = state.get("scene", {}).get("title", "Escena desconocida")
+    description = state.get("scene", {}).get("description", "Sin descripción disponible.")
 
     await update.message.reply_text(
         f"✨ *Nueva aventura iniciada*\n\n🏞️ {scene_title}\n{description}",
@@ -165,10 +166,22 @@ async def main():
 
 
 # ================================================================
-# 🧠 EJECUCIÓN DIRECTA
+# 🧠 EJECUCIÓN SEGURA PARA RENDER / PYTHON 3.13
 # ================================================================
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            logger.warning("⚙️ Loop ya activo, ejecutando SAM en modo no bloqueante.")
+            loop.create_task(main())
+            loop.run_forever()
+        else:
+            loop.run_until_complete(main())
     except (KeyboardInterrupt, SystemExit):
         logger.info("🛑 SAM detenido manualmente.")
+    except RuntimeError as e:
+        if "already running" in str(e):
+            logger.warning("⚠️ SAM ya está corriendo en un loop activo, usando alternativa segura.")
+            asyncio.get_event_loop().create_task(main())
+        else:
+            raise
