@@ -1,174 +1,169 @@
-import os
-import json
-import uuid
+# ==========================================================
+# 🎬 SAM – Scene Manager (Modo Campaña Pre-Creada)
+# ==========================================================
+import logging
 from datetime import datetime
-from typing import List, Optional
+from pathlib import Path
+import json
 
-# ================================================================
-# 🧩 Scene Manager
-# ================================================================
-# Administra las escenas activas de la sesión, sus transiciones y
-# el registro histórico de emociones (Fase 6.10).
-# ================================================================
-
-from core.emotion.emotional_tracker import log_scene, get_emotional_summary
+logger = logging.getLogger(__name__)
 
 
-# ------------------------------------------------
-# 🧱 MODELO DE ESCENA
-# ------------------------------------------------
-class Scene:
-    def __init__(
-        self,
-        title: str,
-        description: str,
-        scene_type: str = "progress",
-        objectives: Optional[List[str]] = None,
-        npcs: Optional[List[str]] = None,
-        environment: Optional[dict] = None,
-        available_actions: Optional[List[str]] = None,
-    ):
-        self.scene_id = str(uuid.uuid4())
-        self.title = title
-        self.description = description
-        self.scene_type = scene_type
-        self.objectives = objectives or []
-        self.npcs = npcs or []
-        self.environment = environment or {
-            "lighting": "",
-            "weather": "",
-            "terrain": ""
-        }
-        self.available_actions = available_actions or []
-        self.status = "active"
-        self.emotion_intensity = 3
-        self.timestamp_start = datetime.utcnow().isoformat()
-        self.timestamp_end = None
-
-    def to_dict(self):
-        return {
-            "scene_id": self.scene_id,
-            "title": self.title,
-            "description": self.description,
-            "scene_type": self.scene_type,
-            "objectives": self.objectives,
-            "npcs": self.npcs,
-            "environment": self.environment,
-            "available_actions": self.available_actions,
-            "status": self.status,
-            "emotion_intensity": self.emotion_intensity,
-            "timestamp_start": self.timestamp_start,
-            "timestamp_end": self.timestamp_end,
-        }
-
-
-# ------------------------------------------------
-# 🎬 SCENE MANAGER
-# ------------------------------------------------
 class SceneManager:
-    def __init__(self, data_path: str = "data"):
-        self.data_path = data_path
-        self.current_scene: Optional[Scene] = None
-        self.scenes_log: List[dict] = []
+    """
+    Administra las escenas activas de la campaña o de la narrativa dinámica.
+    Puede manejar tanto escenas predefinidas (desde archivos JSON de campaña)
+    como escenas generadas dinámicamente durante el juego.
+    """
 
-    # ------------------------------
-    # Crear una nueva escena
-    # ------------------------------
-    def create_scene(self, title: str, description: str, scene_type: str = "progress"):
-        self.current_scene = Scene(title=title, description=description, scene_type=scene_type)
-        print(f"\n🌅 Nueva escena creada: {self.current_scene.title}")
-        return self.current_scene
+    def __init__(self, campaign_dir: str = "data/campaigns"):
+        self.campaign_dir = Path(campaign_dir)
+        self.active_scene = None
+        self.active_campaign = None
+        self.active_chapter = None
+        self.scene_history = []
 
-    # ------------------------------
-    # Obtener escena activa
-    # ------------------------------
-    def get_current_scene(self) -> Optional[Scene]:
-        return self.current_scene
-
-    # ------------------------------
-    # Cerrar la escena actual
-    # ------------------------------
-    def end_scene(self, tone_adapter, mood_manager, story_director, action_handler, renderer):
+    # ==========================================================
+    # CAMPAÑAS (Opcional)
+    # ==========================================================
+    def load_campaign(self, campaign_id: str):
         """
-        Marca la escena actual como finalizada, registra su estado emocional
-        y la guarda en el historial mediante Emotional Tracker.
+        Carga una campaña desde data/campaigns/{campaign_id}/campaign.json
         """
-        if not self.current_scene:
-            print("[⚠️] No hay escena activa para cerrar.")
+        campaign_path = self.campaign_dir / campaign_id / "campaign.json"
+        if not campaign_path.exists():
+            logger.warning(f"[SceneManager] No se encontró la campaña: {campaign_path}")
             return None
 
-        scene = self.current_scene
-        try:
-            # 1️⃣ Actualiza estado y tiempos
-            scene.status = "completed"
-            scene.timestamp_end = datetime.utcnow().isoformat()
+        with open(campaign_path, "r", encoding="utf-8") as f:
+            campaign = json.load(f)
 
-            # 2️⃣ Extrae información emocional y contextual
-            emotion_vector = tone_adapter.get_current_emotions() if hasattr(tone_adapter, "get_current_emotions") else {}
-            dominant_emotion = tone_adapter.get_dominant() if hasattr(tone_adapter, "get_dominant") else "neutral"
-            current_tone = getattr(mood_manager, "current_tone", "neutral")
-            outcome = getattr(story_director, "last_outcome", "mixed")
-            player_actions = getattr(action_handler, "get_last_actions", lambda: [])()
-            scene_summary = getattr(renderer, "get_last_summary", lambda: "")()
+        self.active_campaign = campaign.get("id")
+        self.active_chapter = campaign["chapters"][0]["id"] if campaign.get("chapters") else None
+        logger.info(f"[SceneManager] Campaña cargada: {campaign.get('title')}")
+        return campaign
 
-            # 3️⃣ Registrar en Emotional Tracker
-            log_scene({
-                "scene_id": scene.scene_id,
-                "title": scene.title,
-                "scene_type": scene.scene_type,
-                "emotion_vector": emotion_vector,
-                "dominant_emotion": dominant_emotion,
-                "tone": current_tone,
-                "summary": scene_summary,
-                "player_actions": player_actions,
-                "outcome": outcome,
-            })
+    def load_chapter(self, campaign_id: str, chapter_id: str):
+        """
+        Carga un capítulo desde data/campaigns/{campaign_id}/{chapter_id}.json
+        """
+        chapter_path = self.campaign_dir / campaign_id / f"{chapter_id}.json"
+        if not chapter_path.exists():
+            logger.warning(f"[SceneManager] No se encontró el capítulo: {chapter_path}")
+            return None
 
-            # 4️⃣ Registrar también en memoria local
-            self.scenes_log.append(scene.to_dict())
-            self._save_scenes()
+        with open(chapter_path, "r", encoding="utf-8") as f:
+            chapter = json.load(f)
 
-            # 5️⃣ Mostrar resumen en consola
-            summary = get_emotional_summary()
-            print(f"\n📘 Escena finalizada: {scene.title}")
-            print(f"   Dominante: {dominant_emotion} | Tono: {current_tone}")
-            print(f"   Tendencia global → {summary.get('tone_trend')} ({summary.get('dominant_emotion')})")
+        logger.info(f"[SceneManager] Capítulo cargado: {chapter_id} ({len(chapter.get('scenes', []))} escenas)")
+        return chapter
 
-            # 6️⃣ Reinicia la escena activa
-            self.current_scene = None
-            return scene
+    # ==========================================================
+    # ESCENAS
+    # ==========================================================
+    def create_initial_scene(self):
+        """
+        Crea la primera escena del juego si no hay ninguna activa.
+        """
+        scene = {
+            "scene_id": "intro_scene",
+            "title": "Inicio de la aventura",
+            "description": (
+                "Una brisa fría atraviesa el valle silencioso. El grupo observa las ruinas antiguas "
+                "a lo lejos, sin saber lo que el destino les depara."
+            ),
+            "scene_type": "intro",
+            "emotion_intensity": 3,
+            "status": "active",
+            "objectives": ["explorar", "prepararse", "descansar"],
+            "npcs": [],
+            "environment": {
+                "lighting": "suave",
+                "weather": "templado",
+                "terrain": "colinas"
+            },
+            "available_actions": ["avanzar", "observar", "dialogar"],
+            "transitions": {}
+        }
+        self.active_scene = scene
+        self.scene_history.append({
+            "scene_id": scene["scene_id"],
+            "timestamp": datetime.utcnow().isoformat(),
+            "title": scene["title"]
+        })
+        logger.info("[SceneManager] Escena inicial creada.")
+        return scene
 
-        except Exception as e:
-            print(f"[❌ ERROR] No se pudo registrar la escena: {e}")
-            return scene
+    def get_active_scene(self):
+        """Devuelve la escena actual (si existe)."""
+        return self.active_scene
 
-    # ------------------------------
-    # Guardar log local de escenas
-    # ------------------------------
-    def _save_scenes(self):
-        os.makedirs(os.path.join(self.data_path, "emotion"), exist_ok=True)
-        path = os.path.join(self.data_path, "emotion", "scene_log.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"scenes": self.scenes_log}, f, indent=4, ensure_ascii=False)
+    def update_scene(self, scene_data: dict):
+        """
+        Actualiza los datos de la escena activa con nueva información.
+        """
+        if not self.active_scene:
+            self.active_scene = scene_data
+        else:
+            self.active_scene.update(scene_data)
+        logger.info(f"[SceneManager] Escena actualizada: {self.active_scene.get('title')}")
+        return self.active_scene
 
-    # ------------------------------
-    # Resetear historial local
-    # ------------------------------
-    def reset_local_log(self):
-        self.scenes_log = []
-        path = os.path.join(self.data_path, "emotion", "scene_log.json")
-        if os.path.exists(path):
-            os.remove(path)
-        print("🧹 Historial local de escenas reiniciado.")
+    def end_scene(self):
+        """
+        Marca la escena actual como finalizada y guarda su registro en el historial.
+        """
+        if not self.active_scene:
+            logger.warning("[SceneManager] No hay escena activa para cerrar.")
+            return None
 
+        self.active_scene["status"] = "ended"
+        self.active_scene["end_time"] = datetime.utcnow().isoformat()
+        self.scene_history.append({
+            "scene_id": self.active_scene.get("scene_id"),
+            "timestamp": datetime.utcnow().isoformat(),
+            "title": self.active_scene.get("title")
+        })
 
-# ------------------------------------------------
-# 🧪 DEMO LOCAL
-# ------------------------------------------------
-if __name__ == "__main__":
-    print("🧩 Ejecutando demo de SceneManager con Emotional Tracker...\n")
+        logger.info(f"[SceneManager] Escena finalizada: {self.active_scene.get('title')}")
+        self.active_scene = None
+        return True
 
-    # Simular dependencias mínimas
-    class DummyTone:
-        def get_current_emotions(self): return {"joy": 0.5, "fear": 0.2, "sadness": 0.1}
-        def get
+    def should_end_scene(self, narrative_output: str) -> bool:
+        """
+        Determina si la escena debe cerrarse con base en el texto narrativo.
+        Busca palabras clave como 'continúa', 'siguiente', 'descanso', etc.
+        """
+        if not narrative_output:
+            return False
+
+        keywords = ["siguiente", "continúa", "avanzan", "termina", "descanso", "nuevo capítulo"]
+        for k in keywords:
+            if k.lower() in narrative_output.lower():
+                logger.info(f"[SceneManager] Palabra clave '{k}' detectada: cierre de escena.")
+                return True
+        return False
+
+    # ==========================================================
+    # UTILIDADES Y DEPURACIÓN
+    # ==========================================================
+    def get_scene_history(self):
+        """Devuelve el historial completo de escenas jugadas."""
+        return self.scene_history
+
+    def get_campaign_status(self):
+        """Devuelve información resumida de la campaña activa."""
+        return {
+            "campaign": self.active_campaign,
+            "chapter": self.active_chapter,
+            "active_scene": self.active_scene.get("title") if self.active_scene else None,
+            "scenes_played": len(self.scene_history)
+        }
+
+    def reset(self):
+        """Reinicia el Scene Manager (nuevo inicio de campaña o partida)."""
+        logger.warning("[SceneManager] Reiniciando escenas y campaña activa.")
+        self.active_scene = None
+        self.active_campaign = None
+        self.active_chapter = None
+        self.scene_history = []
