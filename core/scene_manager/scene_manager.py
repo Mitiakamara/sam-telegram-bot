@@ -1,169 +1,175 @@
-# ==========================================================
-# 🎬 SAM – Scene Manager (Modo Campaña Pre-Creada)
-# ==========================================================
+# ================================================================
+# 🎬 SCENE MANAGER
+# ================================================================
+# Gestiona las escenas activas de la historia, sus transiciones,
+# y las descripciones narrativas asociadas.
+#
+# Fase 6.30 compatible con el nuevo Orchestrator (Fase 7.x)
+# ================================================================
+
 import logging
+import random
 from datetime import datetime
-from pathlib import Path
-import json
 
 logger = logging.getLogger(__name__)
 
 
-class SceneManager:
+class Scene:
     """
-    Administra las escenas activas de la campaña o de la narrativa dinámica.
-    Puede manejar tanto escenas predefinidas (desde archivos JSON de campaña)
-    como escenas generadas dinámicamente durante el juego.
+    Representa una escena narrativa en curso.
     """
 
-    def __init__(self, campaign_dir: str = "data/campaigns"):
-        self.campaign_dir = Path(campaign_dir)
-        self.active_scene = None
-        self.active_campaign = None
-        self.active_chapter = None
-        self.scene_history = []
+    def __init__(self, title: str, description: str, scene_type: str = "progress"):
+        self.scene_id = f"scene_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        self.title = title
+        self.description = description
+        self.scene_type = scene_type
+        self.status = "active"
+        self.created_at = datetime.utcnow().isoformat()
 
-    # ==========================================================
-    # CAMPAÑAS (Opcional)
-    # ==========================================================
-    def load_campaign(self, campaign_id: str):
-        """
-        Carga una campaña desde data/campaigns/{campaign_id}/campaign.json
-        """
-        campaign_path = self.campaign_dir / campaign_id / "campaign.json"
-        if not campaign_path.exists():
-            logger.warning(f"[SceneManager] No se encontró la campaña: {campaign_path}")
-            return None
-
-        with open(campaign_path, "r", encoding="utf-8") as f:
-            campaign = json.load(f)
-
-        self.active_campaign = campaign.get("id")
-        self.active_chapter = campaign["chapters"][0]["id"] if campaign.get("chapters") else None
-        logger.info(f"[SceneManager] Campaña cargada: {campaign.get('title')}")
-        return campaign
-
-    def load_chapter(self, campaign_id: str, chapter_id: str):
-        """
-        Carga un capítulo desde data/campaigns/{campaign_id}/{chapter_id}.json
-        """
-        chapter_path = self.campaign_dir / campaign_id / f"{chapter_id}.json"
-        if not chapter_path.exists():
-            logger.warning(f"[SceneManager] No se encontró el capítulo: {chapter_path}")
-            return None
-
-        with open(chapter_path, "r", encoding="utf-8") as f:
-            chapter = json.load(f)
-
-        logger.info(f"[SceneManager] Capítulo cargado: {chapter_id} ({len(chapter.get('scenes', []))} escenas)")
-        return chapter
-
-    # ==========================================================
-    # ESCENAS
-    # ==========================================================
-    def create_initial_scene(self):
-        """
-        Crea la primera escena del juego si no hay ninguna activa.
-        """
-        scene = {
-            "scene_id": "intro_scene",
-            "title": "Inicio de la aventura",
-            "description": (
-                "Una brisa fría atraviesa el valle silencioso. El grupo observa las ruinas antiguas "
-                "a lo lejos, sin saber lo que el destino les depara."
-            ),
-            "scene_type": "intro",
-            "emotion_intensity": 3,
-            "status": "active",
-            "objectives": ["explorar", "prepararse", "descansar"],
-            "npcs": [],
-            "environment": {
-                "lighting": "suave",
-                "weather": "templado",
-                "terrain": "colinas"
-            },
-            "available_actions": ["avanzar", "observar", "dialogar"],
-            "transitions": {}
-        }
-        self.active_scene = scene
-        self.scene_history.append({
-            "scene_id": scene["scene_id"],
-            "timestamp": datetime.utcnow().isoformat(),
-            "title": scene["title"]
-        })
-        logger.info("[SceneManager] Escena inicial creada.")
-        return scene
-
-    def get_active_scene(self):
-        """Devuelve la escena actual (si existe)."""
-        return self.active_scene
-
-    def update_scene(self, scene_data: dict):
-        """
-        Actualiza los datos de la escena activa con nueva información.
-        """
-        if not self.active_scene:
-            self.active_scene = scene_data
-        else:
-            self.active_scene.update(scene_data)
-        logger.info(f"[SceneManager] Escena actualizada: {self.active_scene.get('title')}")
-        return self.active_scene
-
-    def end_scene(self):
-        """
-        Marca la escena actual como finalizada y guarda su registro en el historial.
-        """
-        if not self.active_scene:
-            logger.warning("[SceneManager] No hay escena activa para cerrar.")
-            return None
-
-        self.active_scene["status"] = "ended"
-        self.active_scene["end_time"] = datetime.utcnow().isoformat()
-        self.scene_history.append({
-            "scene_id": self.active_scene.get("scene_id"),
-            "timestamp": datetime.utcnow().isoformat(),
-            "title": self.active_scene.get("title")
-        })
-
-        logger.info(f"[SceneManager] Escena finalizada: {self.active_scene.get('title')}")
-        self.active_scene = None
-        return True
-
-    def should_end_scene(self, narrative_output: str) -> bool:
-        """
-        Determina si la escena debe cerrarse con base en el texto narrativo.
-        Busca palabras clave como 'continúa', 'siguiente', 'descanso', etc.
-        """
-        if not narrative_output:
-            return False
-
-        keywords = ["siguiente", "continúa", "avanzan", "termina", "descanso", "nuevo capítulo"]
-        for k in keywords:
-            if k.lower() in narrative_output.lower():
-                logger.info(f"[SceneManager] Palabra clave '{k}' detectada: cierre de escena.")
-                return True
-        return False
-
-    # ==========================================================
-    # UTILIDADES Y DEPURACIÓN
-    # ==========================================================
-    def get_scene_history(self):
-        """Devuelve el historial completo de escenas jugadas."""
-        return self.scene_history
-
-    def get_campaign_status(self):
-        """Devuelve información resumida de la campaña activa."""
+    def to_dict(self):
         return {
-            "campaign": self.active_campaign,
-            "chapter": self.active_chapter,
-            "active_scene": self.active_scene.get("title") if self.active_scene else None,
-            "scenes_played": len(self.scene_history)
+            "scene_id": self.scene_id,
+            "title": self.title,
+            "description": self.description,
+            "scene_type": self.scene_type,
+            "status": self.status,
+            "created_at": self.created_at,
         }
 
-    def reset(self):
-        """Reinicia el Scene Manager (nuevo inicio de campaña o partida)."""
-        logger.warning("[SceneManager] Reiniciando escenas y campaña activa.")
-        self.active_scene = None
-        self.active_campaign = None
-        self.active_chapter = None
-        self.scene_history = []
+
+# ================================================================
+# 🧩 SCENE MANAGER CORE
+# ================================================================
+class SceneManager:
+    def __init__(self):
+        self.scenes = []
+        self.current_scene = None
+        logger.info("[SceneManager] Inicializado correctamente.")
+
+    # ------------------------------------------------------------
+    # 🔄 Reinicio de escenas
+    # ------------------------------------------------------------
+    def reset_scenes(self):
+        """
+        Restablece todas las escenas y crea la inicial.
+        """
+        self.scenes = []
+        self.current_scene = None
+        initial_scene = self.create_initial_scene()
+        logger.info("[SceneManager] Escenas reiniciadas correctamente.")
+        return initial_scene
+
+    # ------------------------------------------------------------
+    # 🏁 Escena inicial
+    # ------------------------------------------------------------
+    def create_initial_scene(self) -> Scene:
+        """
+        Crea la escena inicial de la aventura.
+        """
+        initial_scene = Scene(
+            title="Inicio de la aventura",
+            description="Una brisa fría atraviesa el valle silencioso. "
+                        "El grupo observa las ruinas antiguas a lo lejos.",
+            scene_type="progress"
+        )
+        self.scenes.append(initial_scene)
+        self.current_scene = initial_scene
+        logger.info("[SceneManager] Escena inicial creada.")
+        return initial_scene
+
+    # ------------------------------------------------------------
+    # 🧭 Generación de nuevas escenas
+    # ------------------------------------------------------------
+    def generate_scene_description(self, player_input: str, scene_type: str) -> dict:
+        """
+        Genera una descripción narrativa básica según la acción del jugador
+        y el tipo de escena decidido por el StoryDirector.
+        """
+        tone_descriptions = {
+            "progress": "El camino se aclara, y una sensación de avance recorre el ambiente.",
+            "tension": "La atmósfera se vuelve densa, como si algo oculto observara desde la penumbra.",
+            "triumph": "Una sensación de victoria y alivio llena el aire.",
+            "setback": "Un giro inesperado complica los planes del grupo.",
+            "complication": "Algo fuera de lo previsto surge, poniendo a prueba su determinación.",
+        }
+
+        desc = tone_descriptions.get(scene_type, tone_descriptions["progress"])
+
+        description = (
+            f"{desc} Tras tu acción ('{player_input}'), "
+            f"la historia toma un nuevo rumbo de tipo '{scene_type}'."
+        )
+
+        scene = Scene(
+            title=f"Escena de tipo {scene_type}",
+            description=description,
+            scene_type=scene_type
+        )
+
+        self.scenes.append(scene)
+        self.current_scene = scene
+
+        logger.info(f"[SceneManager] Nueva escena generada ({scene_type}).")
+        return {
+            "title": scene.title,
+            "description": scene.description,
+            "scene_type": scene_type,
+        }
+
+    # ------------------------------------------------------------
+    # 🎯 Estimación de éxito del jugador
+    # ------------------------------------------------------------
+    def estimate_player_success(self, player_input: str) -> float:
+        """
+        Calcula un valor de éxito del jugador entre 0 y 1 basado en factores simples.
+        (Futuro: integrar con tiradas de dados y stats de personaje)
+        """
+        keywords_success = ["ataco", "logro", "enciendo", "abro", "descubro", "supero"]
+        keywords_failure = ["caigo", "fracaso", "pierdo", "rompo", "fallo", "huyo"]
+
+        score = 0.5  # base neutra
+        for kw in keywords_success:
+            if kw in player_input.lower():
+                score += 0.2
+        for kw in keywords_failure:
+            if kw in player_input.lower():
+                score -= 0.2
+
+        # normaliza entre 0 y 1
+        final_score = max(0.0, min(1.0, score + random.uniform(-0.1, 0.1)))
+        logger.info(f"[SceneManager] Éxito estimado del jugador: {final_score:.2f}")
+        return final_score
+
+    # ------------------------------------------------------------
+    # 📖 Obtener la escena actual
+    # ------------------------------------------------------------
+    def get_current_scene(self):
+        """
+        Devuelve la escena activa.
+        """
+        return self.current_scene
+
+    # ------------------------------------------------------------
+    # 🗺️ Listar todas las escenas
+    # ------------------------------------------------------------
+    def list_scenes(self):
+        """
+        Devuelve una lista de todas las escenas registradas.
+        """
+        return [scene.to_dict() for scene in self.scenes]
+
+
+# ------------------------------------------------------------
+# 🧪 DEMO LOCAL
+# ------------------------------------------------------------
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    sm = SceneManager()
+
+    sm.reset_scenes()
+    sm.generate_scene_description("Observo las ruinas", "tension")
+    sm.generate_scene_description("Cruzo el puente", "progress")
+    print("\nEscenas generadas:")
+    for s in sm.list_scenes():
+        print(f"- {s['title']}: {s['description']}")
