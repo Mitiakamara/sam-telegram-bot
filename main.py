@@ -9,6 +9,7 @@ from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -19,6 +20,9 @@ import uvicorn
 # =============================================================
 from core.orchestrator import Orchestrator
 from core.renderer import Renderer
+
+# 🧙‍♂️ Módulo de creación de personajes
+from core.character_builder import start_character_creation, handle_response, handle_callback
 
 # =============================================================
 # ⚙️ CONFIGURACIÓN GLOBAL
@@ -72,6 +76,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📜 *Comandos disponibles:*\n"
         "/start – Inicia la aventura.\n"
         "/join – Únete a la partida.\n"
+        "/createcharacter – Crea tu personaje.\n"
         "/status – Estado del mundo actual.\n"
         "/reset – Reinicia la campaña (admin).",
         parse_mode="Markdown",
@@ -130,14 +135,19 @@ async def main():
         .build()
     )
 
-    # --- Registrar comandos ---
+    # --- Registrar comandos principales ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("join", join_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("reset", reset_command))
 
-    # --- Capturar mensajes normales ---
+    # --- Registrar creación de personajes ---
+    app.add_handler(CommandHandler("createcharacter", start_character_creation))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_response))
+
+    # --- Capturar mensajes normales (narrativa) ---
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # --- Servidor de salud interno (FastAPI) ---
