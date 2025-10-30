@@ -1,10 +1,3 @@
-# =============================================================
-# SAM Orchestrator - Remote Mode (Render Microservices)
-# =============================================================
-# Coordina la narrativa de SAM conectando con GameAPI y SRDService
-# mediante HTTP remoto. Adaptado al flujo síncrono del bot Telegram.
-# =============================================================
-
 import asyncio
 import httpx
 import logging
@@ -12,12 +5,6 @@ from typing import Dict, Any, Optional
 
 
 class Orchestrator:
-    """
-    Orchestrator actúa como el "director narrativo" de SAM.
-    Gestiona el flujo emocional, la narrativa y las interacciones
-    del jugador con los servicios remotos GameAPI y SRDService.
-    """
-
     def __init__(
         self,
         gameapi_url: str = "https://sam-gameapi.onrender.com",
@@ -42,6 +29,10 @@ class Orchestrator:
         self.log.warning("[Orchestrator] Reiniciando mundo narrativo remoto...")
         try:
             response = await self.session.post(f"{self.gameapi_url}/reset")
+            if response.status_code == 404:
+                self.log.warning("[GameAPI] /reset no disponible. Reinicio simulado localmente.")
+                self.state = {"scene": {"title": "Inicio local", "emotion": "neutral"}}
+                return
             response.raise_for_status()
             self.state = response.json()
             self.log.info("[Orchestrator] Mundo remoto reiniciado correctamente.")
@@ -52,6 +43,8 @@ class Orchestrator:
     async def get_state(self) -> Dict[str, Any]:
         try:
             response = await self.session.get(f"{self.gameapi_url}/state")
+            if response.status_code == 404:
+                return self.state or {"scene": {"title": "Inicio local"}}
             response.raise_for_status()
             self.state = response.json()
             return self.state
@@ -64,37 +57,34 @@ class Orchestrator:
         try:
             self.log.info(f"[Orchestrator] Enviando acción: {action_text}")
             response = await self.session.post(f"{self.gameapi_url}/action", json=payload)
+
+            if response.status_code == 404:
+                self.log.warning("[GameAPI] Endpoint /action no encontrado, usando fallback local.")
+                return self._fallback_local_action(action_text)
+
             response.raise_for_status()
             result = response.json()
             self.state = result
             return result
         except Exception as e:
             self.log.error(f"[Orchestrator] Error procesando acción: {e}")
-            return {"error": "No se pudo procesar la acción.", "scene": {}, "emotion": {}}
+            return self._fallback_local_action(action_text)
 
-    # ---------------------------------------------------------
-    # 📖 SRD Queries
-    # ---------------------------------------------------------
-    async def query_srd(self, query: str) -> Optional[Dict[str, Any]]:
-        try:
-            response = await self.session.post(
-                f"{self.srdservice_url}/query", json={"query": query}
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            self.log.error(f"[SRDService] Error en query SRD: {e}")
-            return None
+    def _fallback_local_action(self, text: str) -> Dict[str, Any]:
+        """Respuesta de emergencia si GameAPI no responde o no existe el endpoint."""
+        return {
+            "title": "Acción narrativa local",
+            "description": f"El mundo todavía no entiende bien cómo reaccionar a '{text}', "
+                           "pero el eco de tus palabras resuena en la oscuridad.",
+            "emotion": "neutral",
+            "scene_type": "progress"
+        }
 
     # ---------------------------------------------------------
     # 💬 Adaptadores síncronos para el bot
     # ---------------------------------------------------------
     def start_new_adventure(self, player_name: str) -> Dict[str, Any]:
-        """
-        Inicializa una nueva aventura para el jugador.
-        Devuelve la escena inicial en formato dict.
-        """
-        result = asyncio.get_event_loop().run_until_complete(self.reset_world())
+        asyncio.get_event_loop().run_until_complete(self.reset_world())
         return {
             "title": f"Inicio de la aventura de {player_name}",
             "description": "Una brisa fría recorre el valle silencioso. El viaje comienza.",
@@ -103,29 +93,17 @@ class Orchestrator:
         }
 
     def process_player_input(self, player_name: str, user_input: str) -> Dict[str, Any]:
-        """
-        Procesa una acción del jugador de forma síncrona.
-        """
         result = asyncio.get_event_loop().run_until_complete(
             self.process_player_action(user_input)
         )
 
-        # fallback en caso de error remoto
+        # fallback si la respuesta remota falla
         if not result or "description" not in result:
-            result = {
-                "title": f"Acción de {player_name}",
-                "description": f"{player_name} intenta {user_input.lower()}, "
-                               "mientras el destino observa en silencio.",
-                "emotion": "neutral",
-                "scene_type": "progress"
-            }
+            result = self._fallback_local_action(user_input)
 
         return result
 
     def get_world_status(self) -> str:
-        """
-        Devuelve un resumen textual del estado actual del mundo.
-        """
         state = asyncio.get_event_loop().run_until_complete(self.get_state())
         scene = state.get("scene", {})
         title = scene.get("title", "Escena desconocida")
@@ -135,9 +113,6 @@ class Orchestrator:
     def reset_world_sync(self):
         asyncio.get_event_loop().run_until_complete(self.reset_world())
 
-    # ---------------------------------------------------------
-    # 🧹 Limpieza
-    # ---------------------------------------------------------
     async def close(self):
         await self.session.aclose()
         self.log.info("[Orchestrator] Sesión HTTP cerrada correctamente.")
