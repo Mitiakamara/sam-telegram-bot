@@ -1,8 +1,8 @@
 # =============================================================
 # SAM Orchestrator - Remote Mode (Render Microservices)
 # =============================================================
-# Coordina toda la narrativa de SAM conectando con GameAPI y SRDService
-# mediante HTTP remoto. No almacena archivos locales.
+# Coordina la narrativa de SAM conectando con GameAPI y SRDService
+# mediante HTTP remoto. Adaptado al flujo síncrono del bot Telegram.
 # =============================================================
 
 import asyncio
@@ -13,9 +13,9 @@ from typing import Dict, Any, Optional
 
 class Orchestrator:
     """
-    El Orchestrator actúa como el "director narrativo" principal de SAM.
-    Gestiona el flujo emocional, la narrativa y las interacciones del jugador,
-    delegando lógica y datos a los servicios remotos (GameAPI y SRDService).
+    Orchestrator actúa como el "director narrativo" de SAM.
+    Gestiona el flujo emocional, la narrativa y las interacciones
+    del jugador con los servicios remotos GameAPI y SRDService.
     """
 
     def __init__(
@@ -33,18 +33,12 @@ class Orchestrator:
         self.session = httpx.AsyncClient(timeout=self.timeout)
 
         self.log.info("[Orchestrator] Inicializando módulos narrativos...")
-        self._initialized = True
-
-        # Inicializa el mundo remoto
         asyncio.get_event_loop().create_task(self.reset_world())
 
     # ---------------------------------------------------------
-    # 🌍 Funciones principales
+    # 🌍 Funciones asíncronas base
     # ---------------------------------------------------------
     async def reset_world(self) -> None:
-        """
-        Reinicia el estado narrativo del mundo en GameAPI remoto.
-        """
         self.log.warning("[Orchestrator] Reiniciando mundo narrativo remoto...")
         try:
             response = await self.session.post(f"{self.gameapi_url}/reset")
@@ -56,9 +50,6 @@ class Orchestrator:
             self.state = {}
 
     async def get_state(self) -> Dict[str, Any]:
-        """
-        Obtiene el estado narrativo actual desde GameAPI remoto.
-        """
         try:
             response = await self.session.get(f"{self.gameapi_url}/state")
             response.raise_for_status()
@@ -69,11 +60,7 @@ class Orchestrator:
             return self.state or {}
 
     async def process_player_action(self, action_text: str) -> Dict[str, Any]:
-        """
-        Envía la acción del jugador al GameAPI remoto y obtiene la respuesta narrativa.
-        """
         payload = {"action": action_text}
-
         try:
             self.log.info(f"[Orchestrator] Enviando acción: {action_text}")
             response = await self.session.post(f"{self.gameapi_url}/action", json=payload)
@@ -81,26 +68,17 @@ class Orchestrator:
             result = response.json()
             self.state = result
             return result
-        except httpx.HTTPStatusError as e:
-            self.log.error(f"[GameAPI] Error HTTP {e.response.status_code}: {e.response.text}")
-        except httpx.RequestError as e:
-            self.log.error(f"[GameAPI] Error de conexión: {e}")
         except Exception as e:
-            self.log.exception(f"[GameAPI] Excepción inesperada: {e}")
-
-        return {"error": "No se pudo procesar la acción.", "scene": {}, "emotion": {}}
+            self.log.error(f"[Orchestrator] Error procesando acción: {e}")
+            return {"error": "No se pudo procesar la acción.", "scene": {}, "emotion": {}}
 
     # ---------------------------------------------------------
-    # 📖 SRD Queries (datos del sistema de reglas)
+    # 📖 SRD Queries
     # ---------------------------------------------------------
     async def query_srd(self, query: str) -> Optional[Dict[str, Any]]:
-        """
-        Consulta el SRDService remoto (razas, clases, conjuros, etc.).
-        """
         try:
             response = await self.session.post(
-                f"{self.srdservice_url}/query",
-                json={"query": query},
+                f"{self.srdservice_url}/query", json={"query": query}
             )
             response.raise_for_status()
             return response.json()
@@ -109,41 +87,57 @@ class Orchestrator:
             return None
 
     # ---------------------------------------------------------
-    # 💬 Generación narrativa y tono
+    # 💬 Adaptadores síncronos para el bot
     # ---------------------------------------------------------
-    async def generate_scene_description(self) -> str:
+    def start_new_adventure(self, player_name: str) -> Dict[str, Any]:
         """
-        Solicita una descripción narrativa adaptativa al GameAPI remoto.
+        Inicializa una nueva aventura para el jugador.
+        Devuelve la escena inicial en formato dict.
         """
-        try:
-            response = await self.session.get(f"{self.gameapi_url}/narrate")
-            response.raise_for_status()
-            data = response.json()
-            description = data.get("description", "")
-            self.log.info(f"[Orchestrator] Narrativa recibida: {description[:80]}...")
-            return description
-        except Exception as e:
-            self.log.error(f"[Narrative] Error al generar descripción: {e}")
-            return "El entorno se mantiene en silencio, a la espera de nuevas acciones."
+        result = asyncio.get_event_loop().run_until_complete(self.reset_world())
+        return {
+            "title": f"Inicio de la aventura de {player_name}",
+            "description": "Una brisa fría recorre el valle silencioso. El viaje comienza.",
+            "emotion": "neutral",
+            "scene_type": "intro"
+        }
+
+    def process_player_input(self, player_name: str, user_input: str) -> Dict[str, Any]:
+        """
+        Procesa una acción del jugador de forma síncrona.
+        """
+        result = asyncio.get_event_loop().run_until_complete(
+            self.process_player_action(user_input)
+        )
+
+        # fallback en caso de error remoto
+        if not result or "description" not in result:
+            result = {
+                "title": f"Acción de {player_name}",
+                "description": f"{player_name} intenta {user_input.lower()}, "
+                               "mientras el destino observa en silencio.",
+                "emotion": "neutral",
+                "scene_type": "progress"
+            }
+
+        return result
+
+    def get_world_status(self) -> str:
+        """
+        Devuelve un resumen textual del estado actual del mundo.
+        """
+        state = asyncio.get_event_loop().run_until_complete(self.get_state())
+        scene = state.get("scene", {})
+        title = scene.get("title", "Escena desconocida")
+        emotion = scene.get("emotion", "neutral")
+        return f"🌍 *Estado actual del mundo:*\nEscena: {title}\nEmoción: {emotion}"
+
+    def reset_world_sync(self):
+        asyncio.get_event_loop().run_until_complete(self.reset_world())
 
     # ---------------------------------------------------------
     # 🧹 Limpieza
     # ---------------------------------------------------------
     async def close(self):
-        """
-        Cierra la sesión HTTP asíncrona.
-        """
         await self.session.aclose()
         self.log.info("[Orchestrator] Sesión HTTP cerrada correctamente.")
-
-    # ---------------------------------------------------------
-    # 🧠 Helpers sincrónicos (para compatibilidad)
-    # ---------------------------------------------------------
-    def reset_world_sync(self):
-        asyncio.get_event_loop().run_until_complete(self.reset_world())
-
-    def process_player_action_sync(self, action_text: str):
-        return asyncio.get_event_loop().run_until_complete(self.process_player_action(action_text))
-
-    def get_state_sync(self):
-        return asyncio.get_event_loop().run_until_complete(self.get_state())
