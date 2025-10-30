@@ -1,24 +1,12 @@
-# =============================================================
-# S.A.M. - Storytelling AI Dungeon Master
-# =============================================================
-# Main entrypoint para despliegue en Render
-# Conexión remota con GameAPI y SRDService
-# Controla la narrativa, jugadores y escenas
-# =============================================================
-
 import os
 import asyncio
 import logging
+import nest_asyncio
+from fastapi import FastAPI
+from telegram.ext import ApplicationBuilder
+from telegram.ext import CommandHandler
 from dotenv import load_dotenv
-from telegram import Update, Bot
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
-from core.orchestrator import Orchestrator
+import uvicorn
 
 # =============================================================
 # ⚙️ CONFIGURACIÓN INICIAL
@@ -28,182 +16,87 @@ load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GAME_API_URL = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com")
 SRD_SERVICE_URL = os.getenv("SRD_SERVICE_URL", "https://sam-srdservice.onrender.com")
+PORT = int(os.getenv("PORT", 10000))
 
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 # =============================================================
-# 🧠 INICIALIZACIÓN DE SAM (Orchestrator remoto)
-# =============================================================
-sam = Orchestrator(
-    gameapi_url=GAME_API_URL,
-    srdservice_url=SRD_SERVICE_URL,
-)
-
-# =============================================================
-# 🧩 HANDLERS DE COMANDOS
+# 🤖 BOT HANDLERS BÁSICOS
 # =============================================================
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update, context):
     await update.message.reply_text(
-        "👋 ¡Saludos, aventurero! Soy *S.A.M.*, tu narrador de campaña.\n"
-        "Usa /join para unirte o /loadcampaign para comenzar una aventura.",
-        parse_mode="Markdown"
+        "👋 ¡Bienvenido a *SAM*, tu Dungeon Master AI!\n\n"
+        "Usa /join para unirte a la campaña o /help para ver opciones.",
+        parse_mode="Markdown",
     )
 
-async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
+async def help_command(update, context):
     await update.message.reply_text(
-        f"🧙‍♂️ {user.first_name} se ha unido al grupo de aventureros."
-    )
-
-async def kick(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("❌ Debes indicar a quién expulsar. Ejemplo: /kick @usuario")
-        return
-    target = " ".join(context.args)
-    await update.message.reply_text(f"⚔️ {target} ha sido expulsado del grupo (por motivos narrativos).")
-
-async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎭 Creemos tu personaje...\n"
-        "Por favor escribe su nombre, raza y clase (ej: 'Asterix, humano guerrero')."
-    )
-
-async def load_campaign(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📜 Cargando campaña desde GameAPI remoto..."
-    )
-    await sam.reset_world()
-    scene = await sam.generate_scene_description()
-    await update.message.reply_text(f"🌍 {scene}")
-
-async def describe_scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    scene = await sam.generate_scene_description()
-    await update.message.reply_text(f"🎬 {scene}")
-
-async def player_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    logger.info(f"[Action] Recibida acción: {text}")
-    result = await sam.process_player_action(text)
-    scene = result.get("scene", "El silencio domina la escena...")
-    emotion = result.get("emotion", {}).get("mood", "neutral")
-    await update.message.reply_text(f"🎭 *Narrador*: {scene}\n\n_Emoción actual: {emotion}_", parse_mode="Markdown")
-
-async def query_srd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("🔍 Usa /srd [término] para consultar las reglas (ejemplo: /srd fireball)")
-        return
-    term = " ".join(context.args)
-    data = await sam.query_srd(term)
-    if not data or "error" in data:
-        await update.message.reply_text(f"⚠️ No se encontró información sobre '{term}'.")
-        return
-
-    formatted = "\n".join([f"*{k.capitalize()}*: {v}" for k, v in data.items()])
-    await update.message.reply_text(f"📚 Resultado de SRD:\n{formatted}", parse_mode="Markdown")
-
-async def reset_world(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("♻️ Reiniciando mundo narrativo remoto...")
-    await sam.reset_world()
-    await update.message.reply_text("✅ Mundo reiniciado correctamente.")
-
-async def get_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    state = await sam.get_state()
-    await update.message.reply_text(f"🧭 Estado actual:\n`{state}`", parse_mode="Markdown")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📖 *Comandos disponibles:*\n"
-        "/join - Unirse a la aventura\n"
-        "/kick [usuario] - Expulsar jugador\n"
-        "/createcharacter - Crear personaje\n"
-        "/loadcampaign - Cargar nueva campaña\n"
-        "/describe - Describir la escena\n"
-        "/srd [término] - Consultar reglas D&D SRD\n"
-        "/reset - Reiniciar mundo narrativo\n"
-        "/state - Ver estado actual\n"
-        "/help - Mostrar esta lista\n",
-        parse_mode="Markdown"
+        "📜 *Comandos disponibles:*\n"
+        "/start – Inicia la aventura.\n"
+        "/join – Únete a la partida.\n"
+        "/status – Estado del mundo actual.\n"
+        "/reset – Reinicia la campaña (admin).\n",
+        parse_mode="Markdown",
     )
 
 # =============================================================
-# 🩺 HEALTHCHECK ENDPOINT (modo Render)
+# 🌐 FASTAPI HEALTHCHECK
 # =============================================================
-from fastapi import FastAPI
-import uvicorn
+app_health = FastAPI()
 
-health_app = FastAPI(title="SAM Health Monitor")
-
-@health_app.get("/health")
-async def healthcheck():
-    return {
-        "status": "ok",
-        "service": "sam-telegram-bot",
-        "connected_to": {
-            "GameAPI": GAME_API_URL,
-            "SRDService": SRD_SERVICE_URL
-        }
-    }
+@app_health.get("/")
+async def root():
+    return {"status": "ok", "bot": "SAM", "mode": "Render", "remote_gameapi": GAME_API_URL}
 
 # =============================================================
-# 🚀 FUNCIÓN PRINCIPAL
+# ⚙️ FUNCIÓN PRINCIPAL
 # =============================================================
-
 async def main():
     logger.info("🚀 Iniciando SAM en modo Render remoto...")
 
-    # Crear aplicación Telegram
+    # Permite que loops se mezclen (corrige RuntimeError)
+    nest_asyncio.apply()
+
+    # --- Inicializa el bot ---
     app = (
-        Application.builder()
+        ApplicationBuilder()
         .token(BOT_TOKEN)
+        .concurrent_updates(True)
         .build()
     )
 
-    # Registrar comandos
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("join", join))
-    app.add_handler(CommandHandler("kick", kick))
-    app.add_handler(CommandHandler("createcharacter", create_character))
-    app.add_handler(CommandHandler("loadcampaign", load_campaign))
-    app.add_handler(CommandHandler("describe", describe_scene))
-    app.add_handler(CommandHandler("srd", query_srd))
-    app.add_handler(CommandHandler("reset", reset_world))
-    app.add_handler(CommandHandler("state", get_state))
     app.add_handler(CommandHandler("help", help_command))
 
-    # Captura cualquier texto como acción del jugador
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, player_action))
+    logger.info("🤖 SAM listo y en ejecución (modo campaña).")
 
-    # Ejecutar bot y health server en paralelo
+    # --- Lanza el healthcheck FastAPI ---
     async def run_health_server():
-        uvicorn_config = uvicorn.Config(
-            health_app,
-            host="0.0.0.0",
-            port=int(os.getenv("PORT", 10000)),
-            log_level="info",
-        )
-        server = uvicorn.Server(uvicorn_config)
+        config = uvicorn.Config(app_health, host="0.0.0.0", port=PORT, log_level="info")
+        server = uvicorn.Server(config)
         await server.serve()
 
-    async def run_bot():
-        logger.info("🤖 SAM listo y en ejecución (modo campaña).")
-        await app.run_polling(close_loop=False)
-
-    # Ejecutar concurrentemente
-    await asyncio.gather(run_bot(), run_health_server())
+    # --- Ejecuta ambos en paralelo ---
+    await asyncio.gather(
+        app.run_polling(close_loop=False),
+        run_health_server()
+    )
 
 # =============================================================
-# 🧩 PUNTO DE ENTRADA
+# 🚀 ENTRY POINT
 # =============================================================
-
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.warning("⚠️ SAM detenido manualmente.")
-    except Exception as e:
-        logger.exception(f"💥 Error crítico: {e}")
+    except RuntimeError as e:
+        logger.error(f"💥 Error crítico: {e}")
+        # En caso de que el loop ya esté corriendo (Render hot reload)
+        nest_asyncio.apply()
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
