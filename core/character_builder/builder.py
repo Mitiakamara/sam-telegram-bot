@@ -34,7 +34,7 @@ def mod_str(score: int) -> str:
 # ================================================================
 async def start_character_creation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    builder_state[user_id] = {"step": 1, "data": {}}
+    builder_state[user_id] = {"step": 1, "data": {}, "user_id": user_id}
     await update.message.reply_text("🧙‍♂️ Vamos a crear tu personaje.\n\n¿Cómo se llamará?")
     return
 
@@ -251,4 +251,8 @@ async def finish_character(message, state):
         f"Guardado en: `{path}`"
     )
     await message.reply_markdown(summary)
-    builder_state.pop(message.chat.id, None)
+
+    # ✅ Cerrar estado usando el user_id real guardado
+    uid = state.get("user_id")
+    if uid in builder_state:
+        builder_state.pop(uid, None)
