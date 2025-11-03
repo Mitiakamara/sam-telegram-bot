@@ -1,0 +1,50 @@
+{
+  "strength": {
+    "brute": 1.0,
+    "graceful": -0.4,
+    "clever": -0.2,
+    "resilient": 0.3,
+    "insightful": 0.0,
+    "charming": 0.0
+  },
+  "dexterity": {
+    "brute": -0.3,
+    "graceful": 1.0,
+    "clever": 0.2,
+    "resilient": 0.2,
+    "insightful": 0.1,
+    "charming": 0.3
+  },
+  "constitution": {
+    "brute": 0.3,
+    "graceful": -0.2,
+    "clever": 0.0,
+    "resilient": 1.0,
+    "insightful": 0.2,
+    "charming": -0.1
+  },
+  "intelligence": {
+    "brute": -0.3,
+    "graceful": 0.1,
+    "clever": 1.0,
+    "resilient": 0.1,
+    "insightful": 0.5,
+    "charming": 0.1
+  },
+  "wisdom": {
+    "brute": -0.2,
+    "graceful": 0.2,
+    "clever": 0.4,
+    "resilient": 0.3,
+    "insightful": 1.0,
+    "charming": 0.2
+  },
+  "charisma": {
+    "brute": 0.0,
+    "graceful": 0.3,
+    "clever": 0.1,
+    "resilient": -0.1,
+    "insightful": 0.2,
+    "charming": 1.0
+  }
+}
