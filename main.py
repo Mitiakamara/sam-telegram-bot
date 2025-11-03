@@ -1,235 +1,117 @@
 import os
-import asyncio
 import logging
-import nest_asyncio
-from fastapi import FastAPI
-from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
     ContextTypes,
-    filters,
 )
-import uvicorn
+from dotenv import load_dotenv
 
-# =============================================================
-# 🧩 Importar módulos SAM Core
-# =============================================================
-from core.orchestrator import Orchestrator
-from core.renderer import Renderer
+# ============================================================
+# 🧩 IMPORTACIONES DEL MOTOR NARRATIVO SAM
+# ============================================================
+from core.story.story_director import StoryDirector
 
-# 🧙‍♂️ Módulo de creación de personajes
-from core.character_builder import start_character_creation, handle_response, handle_callback
-from core.character_builder.loader import load_party
-
-# =============================================================
-# ⚙️ CONFIGURACIÓN GLOBAL
-# =============================================================
+# ============================================================
+# ⚙️ CONFIGURACIÓN INICIAL
+# ============================================================
 load_dotenv()
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-GAME_API_URL = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com")
-SRD_SERVICE_URL = os.getenv("SRD_SERVICE_URL", "https://sam-srdservice.onrender.com")
-PORT = int(os.getenv("PORT", 10000))
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "REEMPLAZAR_CON_TOKEN")
+APP_NAME = "SamTheDungeonBot"
 
 logging.basicConfig(
-    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
 )
-logger = logging.getLogger(__name__)
 
-# =============================================================
-# 🎭 INICIALIZACIÓN SAM CORE
-# =============================================================
-orchestrator = Orchestrator()
-renderer = Renderer()
+# ============================================================
+# 🎭 INSTANCIA GLOBAL DEL DIRECTOR NARRATIVO
+# ============================================================
+story_director = StoryDirector()
 
-# =============================================================
-# 🌐 FASTAPI HEALTHCHECK
-# =============================================================
-app_health = FastAPI()
-
-@app_health.get("/")
-async def root():
-    return {
-        "status": "ok",
-        "bot": "SAM",
-        "mode": "Render",
-        "remote_gameapi": GAME_API_URL,
-    }
-
-# =============================================================
-# 🤖 HANDLERS DE COMANDOS
-# =============================================================
+# ============================================================
+# 🧙‍♂️ COMANDOS DE JUEGO
+# ============================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mensaje de bienvenida e inicio."""
     await update.message.reply_text(
         "👋 ¡Bienvenido a *SAM*, tu Dungeon Master AI!\n\n"
-        "Usa /join para unirte a la campaña o /help para ver opciones.",
-        parse_mode="Markdown",
+        "Usa /createcharacter para crear tu personaje o /join para unirte a la campaña.",
+        parse_mode="Markdown"
     )
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Simulación rápida de creación de personaje (Fase 7.2: integración de atributos)."""
+    user = update.effective_user
+
+    # Atributos de ejemplo — normalmente provienen del builder o parser de hoja
+    example_attributes = {
+        "strength": 15,
+        "dexterity": 12,
+        "constitution": 13,
+        "intelligence": 10,
+        "wisdom": 14,
+        "charisma": 8
+    }
+
+    # Simulación: grupo inicial de un solo jugador
+    story_director.initialize_session([example_attributes])
+
     await update.message.reply_text(
-        "📜 *Comandos disponibles:*\n"
-        "/start – Inicia la aventura.\n"
-        "/join – Únete a la partida.\n"
-        "/createcharacter – Crea tu personaje.\n"
-        "/status – Estado del mundo actual.\n"
-        "/reset – Reinicia la campaña (admin).",
-        parse_mode="Markdown",
+        f"🧙‍♂️ Has creado tu personaje, *{user.first_name}*.\n"
+        "Se han analizado tus atributos y se ha generado tu perfil narrativo.\n"
+        f"`{story_director.get_current_profile()}`",
+        parse_mode="Markdown"
     )
 
-# =============================================================
-# 🧭 /join – Une a los jugadores existentes
-# =============================================================
-async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user.first_name
+async def start_scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inicia una escena narrativa adaptada."""
+    scene = story_director.start_scene("progress_scene.json")
+    await update.message.reply_text(scene["description_adapted"])
 
-    # 1️⃣ Cargar personajes creados desde data/party/
-    party = load_party()
-    if not party:
-        await update.message.reply_text(
-            "⚠️ No hay personajes creados todavía.\nUsa /createcharacter antes de unirte a la aventura.",
-            parse_mode="Markdown",
-        )
+async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ejecuta un evento narrativo (p. ej., combate o descubrimiento)."""
+    args = context.args
+    if not args:
+        await update.message.reply_text("Usa /event <tipo> — ejemplos: combat_victory, setback, discovery")
         return
 
-    # 2️⃣ Mostrar resumen rápido de la party
-    names = ", ".join([p.get("name", "??") for p in party])
+    event_type = args[0]
+    story_director.handle_event(event_type)
+    await update.message.reply_text(story_director.summarize_scene())
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra el estado actual del grupo y la emoción narrativa."""
+    profile = story_director.get_current_profile()
+    summary = story_director.summarize_scene()
     await update.message.reply_text(
-        f"🎲 Formando grupo con: *{names}*\nEl viaje está por comenzar...",
-        parse_mode="Markdown",
+        f"🎭 *Perfil del grupo:* `{profile}`\n\n"
+        f"📖 *Escena actual:*\n{summary}",
+        parse_mode="Markdown"
     )
 
-    # 3️⃣ Iniciar la aventura grupal
-    try:
-        scene = orchestrator.start_new_adventure(user)
-        rendered = renderer.render_scene(scene)
-        await update.message.reply_text(rendered, parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"[SAM Error] Fallo al iniciar aventura: {e}")
-        await update.message.reply_text(
-            "💥 Ocurrió un error al iniciar la aventura. SAM se está recuperando...",
-            parse_mode="Markdown",
-        )
+# ============================================================
+# 🚀 CONFIGURACIÓN DEL BOT
+# ============================================================
+def main():
+    logging.info("Iniciando aplicación de Telegram SAM...")
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-# =============================================================
-# 🌍 /status – Estado del mundo y personajes activos
-# =============================================================
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        # 1️⃣ Obtener estado narrativo
-        status = orchestrator.get_world_status()
-
-        # 2️⃣ Cargar la party actual
-        party = load_party()
-        if party:
-            party_list = "\n".join(
-                [f"- {p.get('name')} ({p.get('class')}, {p.get('race')})" for p in party]
-            )
-            party_text = f"\n\n🎭 *Personajes activos:*\n{party_list}"
-        else:
-            party_text = "\n\n🎭 *No hay personajes creados todavía.*"
-
-        # 3️⃣ Enviar mensaje combinado
-        await update.message.reply_text(
-            f"🌍 *Estado del mundo:*\n{status}{party_text}",
-            parse_mode="Markdown",
-        )
-
-    except Exception as e:
-        logger.error(f"[SAM Error] al mostrar estado: {e}")
-        await update.message.reply_text(
-            "💥 No se pudo obtener el estado del mundo en este momento.",
-            parse_mode="Markdown",
-        )
-
-# =============================================================
-# ♻️ /reset – Reinicia el mundo narrativo
-# =============================================================
-async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user.username or update.effective_user.first_name
-    orchestrator.reset_world()
-    await update.message.reply_text(
-        f"🌀 El mundo narrativo ha sido reiniciado por *{user}*.",
-        parse_mode="Markdown",
-    )
-
-# =============================================================
-# 💬 HANDLER DE MENSAJES LIBRES (jugadores)
-# =============================================================
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text.strip()
-    user_name = update.effective_user.first_name
-
-    try:
-        # SAM procesa el mensaje (acción del jugador)
-        scene_result = orchestrator.process_player_input(user_name, user_input)
-        rendered = renderer.render_scene(scene_result)
-        await update.message.reply_text(rendered, parse_mode="Markdown")
-
-    except Exception as e:
-        logger.error(f"[SAM Error] {e}")
-        await update.message.reply_text(
-            "💥 Algo salió mal procesando tu acción. SAM se está recuperando...",
-            parse_mode="Markdown",
-        )
-
-# =============================================================
-# 🚀 BUCLE PRINCIPAL
-# =============================================================
-async def main():
-    logger.info("🚀 Iniciando SAM en modo Render remoto...")
-    nest_asyncio.apply()
-
-    # --- Inicializar bot Telegram ---
-    app = (
-        ApplicationBuilder()
-        .token(BOT_TOKEN)
-        .concurrent_updates(True)
-        .build()
-    )
-
-    # --- Registrar comandos principales ---
+    # Comandos principales
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("join", join_command))
-    app.add_handler(CommandHandler("status", status_command))
-    app.add_handler(CommandHandler("reset", reset_command))
+    app.add_handler(CommandHandler("createcharacter", create_character))
+    app.add_handler(CommandHandler("scene", start_scene))
+    app.add_handler(CommandHandler("event", event))
+    app.add_handler(CommandHandler("status", status))
 
-    # --- Registrar creación de personajes ---
-    app.add_handler(CommandHandler("createcharacter", start_character_creation))
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_response))
+    logging.info("Bot listo. Esperando comandos...")
+    app.run_polling()
 
-    # --- Capturar mensajes normales (narrativa) ---
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # --- Servidor de salud interno (FastAPI) ---
-    async def run_health_server():
-        config = uvicorn.Config(app_health, host="0.0.0.0", port=PORT, log_level="info")
-        server = uvicorn.Server(config)
-        await server.serve()
-
-    # --- Ejecutar ambos procesos ---
-    logger.info("🤖 SAM listo y en ejecución (modo campaña).")
-    await asyncio.gather(
-        app.run_polling(close_loop=False),
-        run_health_server()
-    )
-
-# =============================================================
-# 🏁 ENTRY POINT
-# =============================================================
+# ============================================================
+# PUNTO DE ENTRADA
+# ============================================================
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        logger.error(f"💥 Error crítico: {e}")
-        nest_asyncio.apply()
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(main())
+    main()
