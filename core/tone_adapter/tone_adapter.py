@@ -1,92 +1,85 @@
-import re
 import random
-import json
-from pathlib import Path
-
 
 class ToneAdapter:
     """
-    Ajusta el tono narrativo según emoción, intensidad y género.
-    Evita repetir frases como 'en un ambiente neutral'.
+    Controla el tono narrativo global, mezclando el estado emocional
+    y los arquetipos derivados de los atributos del grupo (Fase 7.2).
     """
 
-    def __init__(self, emotional_scale_path: str | None = None):
-        self.emotional_scale = {}
-        if emotional_scale_path and Path(emotional_scale_path).exists():
-            with open(emotional_scale_path, "r", encoding="utf-8") as f:
-                try:
-                    self.emotional_scale = json.load(f)
-                except Exception:
-                    self.emotional_scale = {}
-
-    # ================================================================
-    # 🎭 ADAPTACIÓN DE TONO NARRATIVO
-    # ================================================================
-    def adapt_tone(self, description: str, emotion: str = "neutral",
-                   intensity: float = 0.5, genre: str = "heroic") -> str:
-        """
-        Ajusta el texto según el tono emocional actual y la intensidad global.
-        """
-
-        if not description:
-            return ""
-
-        # Evita duplicaciones tipo "en un ambiente X"
-        clean_desc = re.sub(r"(,?\s*en un ambiente\s+\w+)", "", description.strip(), flags=re.IGNORECASE)
-
-        tone_variants = {
-            "neutral": [
-                "El aire se mantiene equilibrado.",
-                "Una calma serena domina el ambiente.",
-                "El momento parece suspendido en quietud."
-            ],
-            "hopeful": [
-                "Una chispa de esperanza ilumina los corazones.",
-                "La luz del amanecer parece prometer nuevos comienzos.",
-                "El ánimo del grupo se eleva con optimismo."
-            ],
-            "fearful": [
-                "Una tensión sutil recorre el ambiente.",
-                "El silencio pesa, como si algo acechara en las sombras.",
-                "El miedo se siente en el aire, denso e invisible."
-            ],
-            "melancholic": [
-                "El aire trae recuerdos del pasado, cargados de nostalgia.",
-                "Una brisa fría parece murmurar viejas historias.",
-                "La tristeza impregna el ambiente con un eco suave."
-            ],
-            "triumphant": [
-                "El aire vibra con energía victoriosa.",
-                "Los corazones laten con orgullo tras la hazaña.",
-                "Un brillo de triunfo se refleja en sus miradas."
-            ],
-            "grim": [
-                "El entorno parece teñido por una sombra ominosa.",
-                "Todo se siente más pesado, como si el destino observara.",
-                "Una sensación de fatalidad flota sobre ellos."
-            ],
-            "mystical": [
-                "Energías invisibles parecen fluir alrededor.",
-                "El mundo vibra con una magia antigua y poderosa.",
-                "Sombras y luces danzan en armonía inexplicable."
-            ],
-            "serene": [
-                "El ambiente irradia calma y equilibrio.",
-                "Una brisa suave acaricia los rostros.",
-                "El entorno respira paz natural."
-            ]
+    def __init__(self):
+        # Tonos base por emoción
+        self.emotional_tones = {
+            "neutral": ["calmo", "sereno", "equilibrado"],
+            "tension": ["tenso", "oscuro", "angustioso"],
+            "progress": ["determinado", "esperanzador", "dinámico"],
+            "triumph": ["heroico", "luminoso", "épico"],
+            "setback": ["melancólico", "opresivo", "desalentador"],
+            "fear": ["frío", "susurrante", "sombrío"]
         }
 
-        # Escoge una frase según emoción
-        tone_suffix = random.choice(tone_variants.get(emotion, tone_variants["neutral"]))
+        # Paletas de tono narrativo según arquetipos
+        self.trait_tone_map = {
+            "brute": ["violento", "firme", "impactante"],
+            "graceful": ["sutil", "elegante", "preciso"],
+            "clever": ["analítico", "ingenioso", "reflexivo"],
+            "resilient": ["constante", "duro", "tenaz"],
+            "insightful": ["introspectivo", "místico", "poético"],
+            "charming": ["persuasivo", "carismático", "cálido"]
+        }
 
-        # Integra la emoción como matiz, no como repetición
-        final = f"{clean_desc} {tone_suffix}"
+    # =========================================================
+    # APLICAR TONO SEGÚN PERFIL Y EMOCIÓN
+    # =========================================================
+    def apply_tone(self, text, emotional_state="neutral", party_profile=None):
+        """
+        Aplica modificaciones descriptivas al texto según:
+        - Estado emocional global del mundo/escena
+        - Perfil narrativo del grupo (Fase 7.2)
+        """
+        if not text:
+            return ""
 
-        # Ajuste leve por intensidad (más dramático o más suave)
-        if intensity >= 0.8:
-            final += " La tensión es palpable, cada detalle parece más vívido."
-        elif intensity <= 0.3:
-            final += " Todo se siente más distante, como si el mundo respirara lentamente."
+        # Determinar adjetivo emocional
+        emotion_tone = random.choice(self.emotional_tones.get(emotional_state, ["neutro"]))
 
-        return final.strip()
+        # Determinar arquetipo dominante del grupo
+        if party_profile:
+            dominant_trait = max(party_profile, key=party_profile.get)
+            trait_tones = self.trait_tone_map.get(dominant_trait, ["neutro"])
+            trait_tone = random.choice(trait_tones)
+        else:
+            trait_tone = "neutro"
+
+        # Mezclar los dos tonos en la narración
+        tone_intro = f"En un ambiente {emotion_tone} y {trait_tone}, "
+        adapted = f"{tone_intro}{text.strip()}"
+        return adapted
+
+    # =========================================================
+    # AJUSTE DE RITMO SEGÚN INTENSIDAD
+    # =========================================================
+    def adjust_sentence_rhythm(self, text, intensity):
+        """
+        Ajusta la cadencia narrativa en función de la intensidad emocional.
+        - > 0.7: ritmo rápido (frases cortas, exclamaciones)
+        - < 0.3: ritmo pausado (puntos suspensivos)
+        """
+        if intensity > 0.7:
+            parts = text.split(".")
+            shortened = [p.strip() for p in parts if p.strip()]
+            return "! ".join(shortened) + "!"
+        elif intensity < 0.3:
+            return text.replace(".", "...").strip()
+        return text
+
+
+# =========================================================
+# DEMO LOCAL
+# =========================================================
+if __name__ == "__main__":
+    adapter = ToneAdapter()
+    sample_text = "El grupo avanza entre las ruinas antiguas, observando el horizonte incierto."
+    profile = {
+        "brute": 0.3, "graceful": 0.8, "clever": 0.6, "resilient": 0.4, "insightful": 0.5, "charming": 0.7
+    }
+    print(adapter.apply_tone(sample_text, emotional_state="progress", party_profile=profile))
