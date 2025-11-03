@@ -4,7 +4,7 @@ from core.attributes.attribute_analyzer import AttributeAnalyzer
 from core.emotion.emotional_tracker import EmotionalTracker
 from core.tone_adapter import ToneAdapter
 from core.scene_manager.scene_manager import SceneManager
-from core.renderer.renderer import render
+from core.renderer import render
 
 
 class StoryDirector:
