@@ -83,6 +83,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
+# =============================================================
+# 🧭 /join – Une a los jugadores existentes
+# =============================================================
 async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.first_name
 
@@ -114,10 +117,40 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
         )
 
+# =============================================================
+# 🌍 /status – Estado del mundo y personajes activos
+# =============================================================
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    status = orchestrator.get_world_status()
-    await update.message.reply_text(status, parse_mode="Markdown")
+    try:
+        # 1️⃣ Obtener estado narrativo
+        status = orchestrator.get_world_status()
 
+        # 2️⃣ Cargar la party actual
+        party = load_party()
+        if party:
+            party_list = "\n".join(
+                [f"- {p.get('name')} ({p.get('class')}, {p.get('race')})" for p in party]
+            )
+            party_text = f"\n\n🎭 *Personajes activos:*\n{party_list}"
+        else:
+            party_text = "\n\n🎭 *No hay personajes creados todavía.*"
+
+        # 3️⃣ Enviar mensaje combinado
+        await update.message.reply_text(
+            f"🌍 *Estado del mundo:*\n{status}{party_text}",
+            parse_mode="Markdown",
+        )
+
+    except Exception as e:
+        logger.error(f"[SAM Error] al mostrar estado: {e}")
+        await update.message.reply_text(
+            "💥 No se pudo obtener el estado del mundo en este momento.",
+            parse_mode="Markdown",
+        )
+
+# =============================================================
+# ♻️ /reset – Reinicia el mundo narrativo
+# =============================================================
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.username or update.effective_user.first_name
     orchestrator.reset_world()
