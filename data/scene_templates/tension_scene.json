@@ -1,0 +1,15 @@
+{
+  "title": "Sombras en el pasaje",
+  "scene_type": "tension",
+  "emotion_intensity": 4,
+  "description": "El silencio se vuelve [ATMOSFERA] cuando una presencia invisible parece seguir sus pasos. El aire se enfría, y algo se mueve entre las sombras.",
+  "objectives": ["Identificar la amenaza", "Mantener la calma", "Buscar cobertura"],
+  "environment": {
+    "lighting": "oscuro",
+    "weather": "viento gélido",
+    "terrain": "pasillo estrecho"
+  },
+  "available_actions": ["esconderse", "vigilar", "preparar un hechizo"],
+  "npcs": [],
+  "transitions": ["setback_scene.json", "triumph_scene.json"]
+}
