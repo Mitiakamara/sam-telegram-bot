@@ -1,0 +1,15 @@
+{
+  "title": "Victoria en las sombras",
+  "scene_type": "triumph",
+  "emotion_intensity": 5,
+  "description": "Tras superar la adversidad [ATMOSFERA], la luz del amanecer se cuela entre los escombros, marcando un nuevo comienzo para el grupo.",
+  "objectives": ["Celebrar el logro", "Reunir recursos", "Prepararse para lo que viene"],
+  "environment": {
+    "lighting": "amanecer",
+    "weather": "claro",
+    "terrain": "campo abierto"
+  },
+  "available_actions": ["descansar", "curar", "revisar el botín"],
+  "npcs": [],
+  "transitions": ["progress_scene.json", "tension_scene.json"]
+}
