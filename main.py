@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # ============================================================
 # 🧩 IMPORTACIONES DEL MOTOR NARRATIVO SAM
 # ============================================================
-from core.story.story_director import StoryDirector
+from core.story_director import StoryDirector
 
 # ============================================================
 # ⚙️ CONFIGURACIÓN INICIAL
