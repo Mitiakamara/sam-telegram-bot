@@ -23,6 +23,7 @@ from core.renderer import Renderer
 
 # 🧙‍♂️ Módulo de creación de personajes
 from core.character_builder import start_character_creation, handle_response, handle_callback
+from core.character_builder.loader import load_party
 
 # =============================================================
 # ⚙️ CONFIGURACIÓN GLOBAL
@@ -83,10 +84,35 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    player = update.effective_user.first_name
-    scene = orchestrator.start_new_adventure(player)
-    rendered = renderer.render_scene(scene)
-    await update.message.reply_text(rendered, parse_mode="Markdown")
+    user = update.effective_user.first_name
+
+    # 1️⃣ Cargar personajes creados desde data/party/
+    party = load_party()
+    if not party:
+        await update.message.reply_text(
+            "⚠️ No hay personajes creados todavía.\nUsa /createcharacter antes de unirte a la aventura.",
+            parse_mode="Markdown",
+        )
+        return
+
+    # 2️⃣ Mostrar resumen rápido de la party
+    names = ", ".join([p.get("name", "??") for p in party])
+    await update.message.reply_text(
+        f"🎲 Formando grupo con: *{names}*\nEl viaje está por comenzar...",
+        parse_mode="Markdown",
+    )
+
+    # 3️⃣ Iniciar la aventura grupal
+    try:
+        scene = orchestrator.start_new_adventure(user)
+        rendered = renderer.render_scene(scene)
+        await update.message.reply_text(rendered, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"[SAM Error] Fallo al iniciar aventura: {e}")
+        await update.message.reply_text(
+            "💥 Ocurrió un error al iniciar la aventura. SAM se está recuperando...",
+            parse_mode="Markdown",
+        )
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = orchestrator.get_world_status()
