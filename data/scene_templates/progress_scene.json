@@ -1,0 +1,15 @@
+{
+  "title": "Avance entre las ruinas",
+  "scene_type": "progress",
+  "emotion_intensity": 3,
+  "description": "El grupo avanza [ATMOSFERA] entre las ruinas antiguas. Fragmentos de piedra cuentan historias olvidadas.",
+  "objectives": ["Explorar el pasaje", "Evitar trampas", "Buscar señales de vida"],
+  "environment": {
+    "lighting": "tenue",
+    "weather": "nublado",
+    "terrain": "ruinas cubiertas de polvo"
+  },
+  "available_actions": ["investigar", "avanzar", "descansar"],
+  "npcs": [],
+  "transitions": ["tension_scene.json", "triumph_scene.json"]
+}
