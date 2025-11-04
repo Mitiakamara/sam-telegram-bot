@@ -1,0 +1,23 @@
+{
+  "campaign_id": "The_Genie_s_Wishes",
+  "campaign_title": "The Genie's Wishes – Chapter 1: Cold Open",
+  "current_chapter": 1,
+  "active_scene": "progress_scene.json",
+  "party": [
+    "Pimp",
+    "Asterix"
+  ],
+  "completed_quests": [],
+  "pending_quests": [
+    "Escape del oasis",
+    "Encontrar la lámpara del genio"
+  ],
+  "last_updated": "2025-11-03T23:50:00",
+  "metadata": {
+    "dm_version": "SAM v7.5",
+    "ruleset": "SRD 5.1.2",
+    "difficulty_mode": "Normal",
+    "allow_random_encounters": false,
+    "auto_transitions_enabled": true
+  }
+}
