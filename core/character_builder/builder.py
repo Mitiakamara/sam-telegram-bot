@@ -1,9 +1,16 @@
-# sam-telegram-bot/core/character_builder/builder.py
+# ================================================================
+# 🧙 SAM Character Builder – SRD 5.1.2
+# ================================================================
+# Creador de personajes interactivo vía Telegram.
+# Usa botones InlineKeyboard para raza, clase, atributos, skills y hechizos.
+# ================================================================
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from core.character_builder.prompts import SPECIES, CLASSES, SKILLS, SPELLS_BY_CLASS, ABILITIES, DEFAULT_LEVEL
 from core.character_builder.storage import save_character
 from core.character_builder.validator import validate_abilities
+from core.story_director.story_director import StoryDirector
 
 # ================================================================
 # ESTADO DE SESIÓN (temporal)
@@ -233,10 +240,7 @@ async def ask_spells(message, state):
 
 async def finish_character(message, state):
     data = state["data"]
-
-    # 🧮 Calcular modificadores
     data["modifiers"] = {a: ability_modifier(v) for a, v in data["abilities"].items()}
-
     path = save_character(data)
     summary = (
         f"✅ *Personaje creado con éxito*\n\n"
@@ -251,8 +255,19 @@ async def finish_character(message, state):
         f"Guardado en: `{path}`"
     )
     await message.reply_markdown(summary)
-
-    # ✅ Cerrar estado usando el user_id real guardado
+    await integrate_with_story_director(data)
     uid = state.get("user_id")
     if uid in builder_state:
         builder_state.pop(uid, None)
+
+# ================================================================
+# INTEGRACIÓN CON STORYDIRECTOR
+# ================================================================
+async def integrate_with_story_director(data: dict):
+    try:
+        director = StoryDirector()
+        if hasattr(director, "create_character"):
+            director.create_character(data)
+            print(f"[Builder] Personaje integrado con StoryDirector: {data['name']}")
+    except Exception as e:
+        print(f"[Builder] No se pudo integrar con StoryDirector: {e}")
