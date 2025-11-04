@@ -1,30 +1,47 @@
-# S.A.M. Telegram Bot (v0.1)
+# 🧙‍♂️ SAM – Storytelling AI Master (SRD 5.1.2)
 
-## Descripción
-Bot de Telegram que permite interactuar con el Dungeon Master AI S.A.M. enviando acciones y recibiendo respuestas desde la Game API.
+Versión: **v7.6.1 Stable**  
+Tipo de proyecto: *AI Dungeon Master para Telegram basado en SRD 5.1.2*  
+Desarrollado por: **Francisco Correa Alfaro**
 
-## Instalación
+---
 
-1. Crear entorno virtual e instalar dependencias:
-   ```bash
-   python -m venv .venv
-   .\.venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+## 🎯 Objetivo
 
-2. Configurar variables de entorno en `.env`:
-   ```ini
-   BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
-   GAME_API_URL=http://localhost:9000
-   ```
+SAM es un **Dungeon Master AI** diseñado para dirigir partidas de *Dungeons & Dragons* compatibles con el **SRD 5.1.2 (Creative Commons)**.  
+Utiliza campañas precreadas, mantiene coherencia narrativa y permite crear personajes directamente desde Telegram.
 
-3. Ejecutar el bot:
-   ```bash
-   python main.py
-   ```
+---
 
-## Comandos disponibles
-- `/start` — Mensaje de bienvenida.
-- `/join` — Une al jugador a la partida.
-- `/state` — Muestra el estado actual.
-- Mensajes libres — Interpretados como acciones dentro del juego.
+## ⚙️ Características Principales
+
+| Módulo | Funcionalidad |
+|--------|----------------|
+| 🎬 **StoryDirector** | Orquesta la narrativa, maneja escenas, emociones y tono. |
+| 🧠 **ToneAdapter** | Ajusta la voz narrativa según emoción y rasgos del grupo. |
+| ❤️ **EmotionalTracker** | Calcula la emoción global y reacciones adaptativas. |
+| 🗺️ **SceneManager** | Crea escenas a partir de plantillas SRD. |
+| 🔁 **TransitionEngine** | Determina la siguiente escena según evento y emoción. |
+| 🏕️ **CampaignManager** | Guarda el progreso y estado de la campaña. |
+| 🧙‍♂️ **Renderer** | Punto de salida textual (texto narrativo final). |
+
+---
+
+## 💬 Comandos disponibles (Telegram)
+
+| Comando | Descripción |
+|----------|--------------|
+| `/start` | Mensaje de bienvenida. |
+| `/createcharacter <nombre> [clase] [raza]` | Crea un personaje usando el sistema SRD 5.1.2. |
+| `/join` | Une al jugador a la campaña activa. |
+| `/scene` | Muestra o continúa la escena actual. |
+| `/event <tipo>` | Ejecuta un evento narrativo (combat_victory, setback, rally...). |
+| `/status` | Muestra el estado emocional y escena actual. |
+| `/progress` | Muestra el estado de la campaña (capítulo, quests, grupo). |
+| `/restart` | Reinicia la campaña actual desde el inicio. |
+| `/loadcampaign <slug>` | Carga otra campaña SRD precreada. (Solo admin). |
+
+---
+
+## 🧩 Estructura de Carpetas
+
