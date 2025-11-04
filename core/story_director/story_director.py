@@ -1,3 +1,10 @@
+# ================================================================
+# 🎬 STORY DIRECTOR – Fase 7.6.1 (SRD 5.1.2 Stable)
+# ================================================================
+# Coordina narrativa, tono, emociones y progreso de campaña SRD.
+# Ahora también integra personajes creados desde el Character Builder.
+# ================================================================
+
 import os
 import random
 from core.attributes.attribute_analyzer import AttributeAnalyzer
@@ -11,8 +18,9 @@ from core.campaign import CampaignManager
 
 class StoryDirector:
     """
-    🎬 STORY DIRECTOR – Fase 7.6.1 (Final estable SRD)
-    Coordina narrativa, tono, emociones y progreso de campaña SRD.
+    🎬 STORY DIRECTOR – Motor narrativo principal
+    - Coordina emoción, tono, escena y progreso de campaña.
+    - Administra personajes del grupo.
     """
 
     def __init__(self):
@@ -27,44 +35,42 @@ class StoryDirector:
         # Estado actual
         self.party_profile = None
         self.active_scene = None
-        self.party = []  # lista de nombres o dicts básicos de PJs
+        self.player_characters = []  # lista de dicts con personajes creados
 
     # =========================================================
     # SESIÓN / INICIALIZACIÓN
     # =========================================================
     def initialize_session(self, party_attributes, party_names=None):
+        """
+        Genera el perfil narrativo del grupo a partir de sus atributos
+        y reinicia el estado emocional global. También establece la party.
+        """
         self.party_profile = self.attribute_analyzer.analyze_party(party_attributes)
         self.emotion_tracker.reset_emotional_state()
 
         if party_names:
-            self.party = party_names
             self.campaign_manager.set_party(party_names)
 
         print(f"[StoryDirector] Perfil narrativo del grupo cargado: {self.party_profile}")
 
     # =========================================================
-    # INTERFAZ PÚBLICA (para main.py)
+    # INTERFAZ PÚBLICA – Integración con Telegram
     # =========================================================
-    def create_character(self, telegram_id, username, name, char_class="Fighter", race="Human"):
-        """Crea un personaje básico y lo añade al grupo."""
-        char_data = {
-            "telegram_id": telegram_id,
-            "username": username,
-            "name": name,
-            "class": char_class,
-            "race": race,
-        }
-        self.party.append(name)
-        self.campaign_manager.set_party(self.party)
-        print(f"[StoryDirector] Nuevo personaje creado: {char_data}")
+    def create_character(self, char_data: dict):
+        """
+        Registra un personaje creado desde el Character Builder
+        o desde el flujo de Telegram.
+        """
+        self.player_characters.append(char_data)
+        self.campaign_manager.set_party([c["name"] for c in self.player_characters])
+        print(f"[StoryDirector] Personaje añadido: {char_data['name']}")
         return char_data
 
     def join_player(self, telegram_id, username):
-        """Une a un jugador existente o lo confirma en la campaña."""
-        if username not in self.party:
-            self.party.append(username)
-            self.campaign_manager.set_party(self.party)
-        print(f"[StoryDirector] Jugador {username} se unió a la campaña.")
+        """Une un jugador existente o lo confirma en la campaña."""
+        if username not in [c.get("name") for c in self.player_characters]:
+            self.player_characters.append({"name": username})
+            self.campaign_manager.set_party([c["name"] for c in self.player_characters])
         return {"message": f"✅ {username} se unió a la campaña."}
 
     def render_current_scene(self):
@@ -78,8 +84,8 @@ class StoryDirector:
         new_emotion = self.handle_event(event_type)
         return f"🎭 Evento '{event_type}' ejecutado. Emoción actual: {new_emotion.capitalize()}.\n\n{self.summarize_scene()}"
 
-    def get_player_status(self, telegram_id):
-        """Muestra estado narrativo general (no usa id individual aún)."""
+    def get_player_status(self, telegram_id=None):
+        """Muestra estado narrativo general."""
         emotion = self.emotion_tracker.get_current_emotion()
         return (
             f"🎭 Estado emocional: *{emotion.capitalize()}*\n"
@@ -109,6 +115,11 @@ class StoryDirector:
     # CREACIÓN DE ESCENAS
     # =========================================================
     def start_scene(self, scene_template):
+        """
+        Crea y adapta una nueva escena según el perfil del grupo
+        y el estado emocional actual. También actualiza el progreso
+        en CampaignManager.
+        """
         current_emotion = self.emotion_tracker.get_current_emotion()
 
         scene = self.scene_manager.create_scene_from_template(
@@ -134,6 +145,9 @@ class StoryDirector:
     # EVENTOS Y EVOLUCIÓN EMOCIONAL
     # =========================================================
     def handle_event(self, event_type):
+        """
+        Reacciona a un evento narrativo y guarda el progreso actualizado.
+        """
         new_emotion = self.emotion_tracker.update_from_event(event_type)
         print(f"[StoryDirector] Estado emocional actualizado: {new_emotion}")
         self.auto_transition(event_type)
@@ -204,5 +218,5 @@ if __name__ == "__main__":
     try:
         director.demo()
     except FileNotFoundError:
-        print("⚠️  No se encontró 'progress_scene.json'. "
+        print("⚠️ No se encontró 'progress_scene.json'. "
               "Asegúrate de tener las plantillas en 'data/scene_templates/'.")
