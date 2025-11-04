@@ -43,8 +43,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+
 async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Simulación rápida de creación de personaje (Fase 7.2: integración de atributos)."""
+    """Simula la creación de personaje y genera perfil narrativo."""
     user = update.effective_user
 
     # Atributos de ejemplo — normalmente provienen del builder o parser de hoja
@@ -57,31 +58,34 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "charisma": 8
     }
 
-    # Simulación: grupo inicial de un solo jugador
-    story_director.initialize_session([example_attributes])
+    # Simulación de grupo con un solo jugador
+    story_director.initialize_session([example_attributes], [user.first_name])
 
     await update.message.reply_text(
         f"🧙‍♂️ Has creado tu personaje, *{user.first_name}*.\n"
-        "Se han analizado tus atributos y se ha generado tu perfil narrativo.\n"
+        "Se ha generado tu perfil narrativo y se ha inicializado la campaña.\n"
         f"`{story_director.get_current_profile()}`",
         parse_mode="Markdown"
     )
+
 
 async def start_scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Inicia una escena narrativa adaptada."""
     scene = story_director.start_scene("progress_scene.json")
     await update.message.reply_text(scene["description_adapted"])
 
+
 async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ejecuta un evento narrativo (p. ej., combate o descubrimiento)."""
     args = context.args
     if not args:
-        await update.message.reply_text("Usa /event <tipo> — ejemplos: combat_victory, setback, discovery")
+        await update.message.reply_text("Usa /event <tipo> — ejemplos: combat_victory, setback, rally, calm")
         return
 
     event_type = args[0]
     story_director.handle_event(event_type)
     await update.message.reply_text(story_director.summarize_scene())
+
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra el estado actual del grupo y la emoción narrativa."""
@@ -92,6 +96,13 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📖 *Escena actual:*\n{summary}",
         parse_mode="Markdown"
     )
+
+
+async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra el estado actual de la campaña."""
+    summary = story_director.get_campaign_summary()
+    await update.message.reply_text(summary, parse_mode="Markdown")
+
 
 # ============================================================
 # 🚀 CONFIGURACIÓN DEL BOT
@@ -106,9 +117,11 @@ def main():
     app.add_handler(CommandHandler("scene", start_scene))
     app.add_handler(CommandHandler("event", event))
     app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("progress", progress))
 
     logging.info("Bot listo. Esperando comandos...")
     app.run_polling()
+
 
 # ============================================================
 # PUNTO DE ENTRADA
