@@ -11,7 +11,7 @@ from core.campaign import CampaignManager
 
 class StoryDirector:
     """
-    🎬 STORY DIRECTOR – Fase 7.5 (Integrado con CampaignManager)
+    🎬 STORY DIRECTOR – Fase 7.6.1 (Final estable SRD)
     Coordina narrativa, tono, emociones y progreso de campaña SRD.
     """
 
@@ -27,32 +27,88 @@ class StoryDirector:
         # Estado actual
         self.party_profile = None
         self.active_scene = None
+        self.party = []  # lista de nombres o dicts básicos de PJs
 
     # =========================================================
     # SESIÓN / INICIALIZACIÓN
     # =========================================================
     def initialize_session(self, party_attributes, party_names=None):
-        """
-        Genera el perfil narrativo del grupo a partir de sus atributos
-        y reinicia el estado emocional global. También establece la party.
-        """
         self.party_profile = self.attribute_analyzer.analyze_party(party_attributes)
         self.emotion_tracker.reset_emotional_state()
 
         if party_names:
+            self.party = party_names
             self.campaign_manager.set_party(party_names)
 
         print(f"[StoryDirector] Perfil narrativo del grupo cargado: {self.party_profile}")
 
     # =========================================================
+    # INTERFAZ PÚBLICA (para main.py)
+    # =========================================================
+    def create_character(self, telegram_id, username, name, char_class="Fighter", race="Human"):
+        """Crea un personaje básico y lo añade al grupo."""
+        char_data = {
+            "telegram_id": telegram_id,
+            "username": username,
+            "name": name,
+            "class": char_class,
+            "race": race,
+        }
+        self.party.append(name)
+        self.campaign_manager.set_party(self.party)
+        print(f"[StoryDirector] Nuevo personaje creado: {char_data}")
+        return char_data
+
+    def join_player(self, telegram_id, username):
+        """Une a un jugador existente o lo confirma en la campaña."""
+        if username not in self.party:
+            self.party.append(username)
+            self.campaign_manager.set_party(self.party)
+        print(f"[StoryDirector] Jugador {username} se unió a la campaña.")
+        return {"message": f"✅ {username} se unió a la campaña."}
+
+    def render_current_scene(self):
+        """Devuelve el texto renderizado de la escena actual."""
+        if not self.active_scene:
+            return "No hay ninguna escena activa."
+        return self.summarize_scene()
+
+    def trigger_event(self, event_type):
+        """Dispara un evento narrativo y devuelve el nuevo texto."""
+        new_emotion = self.handle_event(event_type)
+        return f"🎭 Evento '{event_type}' ejecutado. Emoción actual: {new_emotion.capitalize()}.\n\n{self.summarize_scene()}"
+
+    def get_player_status(self, telegram_id):
+        """Muestra estado narrativo general (no usa id individual aún)."""
+        emotion = self.emotion_tracker.get_current_emotion()
+        return (
+            f"🎭 Estado emocional: *{emotion.capitalize()}*\n"
+            f"📖 Escena actual: {self.active_scene['title'] if self.active_scene else 'N/A'}"
+        )
+
+    def get_campaign_progress(self):
+        """Devuelve el progreso de campaña formateado."""
+        return self.get_campaign_summary()
+
+    def restart_campaign(self):
+        """Reinicia la campaña al capítulo inicial."""
+        self.campaign_manager.state["current_chapter"] = 1
+        self.campaign_manager.state["completed_quests"] = []
+        self.campaign_manager.state["pending_quests"] = []
+        self.campaign_manager.state["active_scene"] = None
+        self.campaign_manager.save_state()
+        self.emotion_tracker.reset_emotional_state()
+        print("[StoryDirector] Campaña reiniciada desde el inicio.")
+
+    def load_campaign(self, campaign_slug):
+        """Cambia la campaña activa (cargando un nuevo CampaignManager)."""
+        self.campaign_manager = CampaignManager(campaign_slug)
+        print(f"[StoryDirector] Campaña cargada: {campaign_slug}")
+
+    # =========================================================
     # CREACIÓN DE ESCENAS
     # =========================================================
     def start_scene(self, scene_template):
-        """
-        Crea y adapta una nueva escena según el perfil del grupo
-        y el estado emocional actual. También actualiza el progreso
-        en CampaignManager.
-        """
         current_emotion = self.emotion_tracker.get_current_emotion()
 
         scene = self.scene_manager.create_scene_from_template(
@@ -61,7 +117,6 @@ class StoryDirector:
             emotion_state=current_emotion
         )
 
-        # Aplicar tono narrativo final
         adapted_description = self.tone_adapter.apply_tone(
             text=scene["description_adapted"],
             emotional_state=current_emotion,
@@ -71,9 +126,7 @@ class StoryDirector:
         scene["description_adapted"] = adapted_description
         self.active_scene = scene
 
-        # Guardar progreso de campaña
         self.campaign_manager.update_scene(scene_template)
-
         render(adapted_description)
         return scene
 
@@ -81,30 +134,18 @@ class StoryDirector:
     # EVENTOS Y EVOLUCIÓN EMOCIONAL
     # =========================================================
     def handle_event(self, event_type):
-        """
-        Reacciona a un evento narrativo y guarda el progreso actualizado.
-        """
         new_emotion = self.emotion_tracker.update_from_event(event_type)
         print(f"[StoryDirector] Estado emocional actualizado: {new_emotion}")
-
-        # Transición automática
         self.auto_transition(event_type)
-
-        # Guardar estado luego de evento
         self.campaign_manager.save_state()
-
         return new_emotion
 
     # =========================================================
     # MOTOR DE TRANSICIONES AUTOMÁTICAS
     # =========================================================
     def auto_transition(self, event_type):
-        """
-        Determina la siguiente escena y actualiza el registro de campaña.
-        """
         current_emotion = self.emotion_tracker.get_current_emotion()
         next_scene = self.transition_engine.get_next_scene(current_emotion, event_type)
-
         print(f"[StoryDirector] Transición automática a escena: {next_scene}")
         self.start_scene(next_scene)
 
@@ -112,16 +153,10 @@ class StoryDirector:
     # GESTIÓN DE CAMPAÑA
     # =========================================================
     def complete_quest(self, quest_name):
-        """
-        Marca una misión como completada en la campaña actual.
-        """
         self.campaign_manager.add_completed_quest(quest_name)
         print(f"[StoryDirector] Misión completada: {quest_name}")
 
     def add_pending_quest(self, quest_name):
-        """
-        Agrega una nueva misión pendiente.
-        """
         self.campaign_manager.add_pending_quest(quest_name)
         print(f"[StoryDirector] Nueva misión añadida: {quest_name}")
 
@@ -138,18 +173,12 @@ class StoryDirector:
         return self.party_profile or {}
 
     def get_campaign_summary(self):
-        """
-        Devuelve el resumen formateado del estado actual de la campaña.
-        """
         return self.campaign_manager.get_summary()
 
     # =========================================================
     # DEMO LOCAL
     # =========================================================
     def demo(self):
-        """
-        Prueba completa de flujo narrativo + guardado de progreso.
-        """
         party = [
             {"strength": 16, "dexterity": 14, "constitution": 13, "intelligence": 11, "wisdom": 10, "charisma": 8},
             {"strength": 8, "dexterity": 16, "constitution": 10, "intelligence": 15, "wisdom": 12, "charisma": 14}
@@ -170,9 +199,6 @@ class StoryDirector:
         print(self.summarize_scene())
 
 
-# =========================================================
-# MODO STANDALONE
-# =========================================================
 if __name__ == "__main__":
     director = StoryDirector()
     try:
