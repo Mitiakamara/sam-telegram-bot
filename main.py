@@ -1,7 +1,6 @@
 import os
 import logging
 import asyncio
-
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
@@ -10,16 +9,18 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# Handlers de jugador (status, progress, scene)
+# ================================================================
+# 🔗 Importa los handlers del jugador (status, progress, scene)
+# ================================================================
 from core.handlers.player_handler import register_player_handlers
 
-# Si tienes otros handlers separados, los puedes importar aquí
-# from core.handlers.admin_handler import register_admin_handlers
-# from core.handlers.game_handler import register_game_handlers
+# ================================================================
+# ⚙️ CONFIGURACIÓN INICIAL Y LOGGING
+# ================================================================
+load_dotenv()
 
-# ================================================================
-# 🔧 LOGGING
-# ================================================================
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -28,18 +29,11 @@ logger = logging.getLogger("SAM-Bot")
 
 
 # ================================================================
-# ⚙️ CONFIG
-# ================================================================
-load_dotenv()
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
-
-# ================================================================
-# 🧠 HANDLERS BÁSICOS
+# 🤖 HANDLERS PRINCIPALES
 # ================================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    /start – mensaje de bienvenida
+    /start – Mensaje de bienvenida y lista de comandos.
     """
     text = (
         "🧙‍♂️ Bienvenido a SAM The Dungeon Bot\n"
@@ -60,57 +54,61 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    /join – aquí normalmente vinculas al usuario con la campaña activa.
-    En tu proyecto real esto lo hace el CampaignManager + StoryDirector.
-    Aquí dejo una versión mínima.
+    /join – Añade al usuario actual a la campaña activa.
+    (Placeholder; en tu repo real se enlaza con CampaignManager)
     """
     user = update.effective_user
-    # Aquí es donde en tu repo llamas al campaign_manager para añadir al player
-    # Por ahora solo respondemos:
     await update.message.reply_text(f"✅ {user.first_name} se unió a la campaña.")
 
 
 async def createcharacter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    /createcharacter – en tu proyecto esto dispara el flujo del CharacterBuilder
-    que ya tienes en core/character_builder/.
-    Aquí dejo una versión placeholder para que no truene.
+    /createcharacter – Inicia la creación de personaje paso a paso.
+    (Placeholder; se conecta con core/character_builder/builder.py)
     """
-    # Si ya tienes un handler dedicado, sustitúyelo aquí.
     await update.message.reply_text(
         "🧙‍♂️ Vamos a crear tu personaje.\n\n¿Cómo se llamará?"
     )
-    # Aquí normalmente guardarías en context.user_data["state"] = "creating_character"
-    # y el siguiente MessageHandler recogería el nombre, etc.
 
 
 # ================================================================
-# 🏁 MAIN
+# 🏁 MAIN ASÍNCRONO
 # ================================================================
 async def main():
     if not BOT_TOKEN:
         raise RuntimeError("❌ TELEGRAM_BOT_TOKEN no está definido en el entorno.")
 
+    # Inicializa la app
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Handlers básicos
+    # Handlers base
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("join", join))
     application.add_handler(CommandHandler("createcharacter", createcharacter))
 
-    # 🔗 Enganche que me pediste
+    # Handlers de jugador (status, progress, scene)
     register_player_handlers(application)
-
-    # Si tienes más registros, van aquí:
-    # register_admin_handlers(application)
-    # register_game_handlers(application)
 
     logger.info("🤖 SAM The Dungeon Bot iniciado correctamente.")
     logger.info("Esperando comandos en Telegram...")
 
-    # Modo polling (como muestran tus logs)
+    # Ejecuta en modo polling
     await application.run_polling(close_loop=False)
 
 
+# ================================================================
+# 🚀 EJECUCIÓN SEGURA (compatible con Render / Python 3.13)
+# ================================================================
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "already running" in str(e):
+            logger.warning(
+                "⚠️ Loop asyncio ya en ejecución. Usando loop existente (Render safe mode)."
+            )
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())
+            loop.run_forever()
+        else:
+            raise
