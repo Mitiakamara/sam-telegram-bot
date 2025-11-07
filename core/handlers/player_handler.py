@@ -1,3 +1,11 @@
+# ================================================================
+# 🧙 PLAYER HANDLER
+# ================================================================
+# Controla los comandos de jugador:
+#   /join   – unirse a la campaña
+#   /status – ver el estado actual del jugador y emoción global
+# ================================================================
+
 from telegram.ext import CommandHandler
 from telegram import Update
 from telegram.ext import ContextTypes
