@@ -14,6 +14,7 @@ from telegram.ext import (
 # ================================================================
 from core.handlers.player_handler import register_player_handlers
 
+
 # ================================================================
 # ⚙️ CONFIGURACIÓN INICIAL Y LOGGING
 # ================================================================
@@ -107,7 +108,14 @@ if __name__ == "__main__":
             logger.warning(
                 "⚠️ Loop asyncio ya en ejecución. Usando loop existente (Render safe mode)."
             )
-            loop = asyncio.get_event_loop()
+            try:
+                # Python 3.13: preferir get_running_loop()
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                # Si no existe, crear uno nuevo
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
             loop.create_task(main())
             loop.run_forever()
         else:
