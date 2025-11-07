@@ -1,5 +1,6 @@
 import os
 import logging
+
 from telegram.ext import ApplicationBuilder
 from core.handlers.player_handler import register_player_handlers
 from core.story_director import StoryDirector
@@ -20,22 +21,25 @@ def get_bot_token() -> str:
 
 def main() -> None:
     logger.info("🤖 Iniciando SAM The Dungeon Bot...")
+
     token = get_bot_token()
 
+    # Instancias core
     story_director = StoryDirector()
-    application = (
-        ApplicationBuilder()
-        .token(token)
-        .post_init(lambda app: app.bot_data.update({"story_director": story_director}))
-        .build()
-    )
 
+    # Construir app de Telegram
+    application = ApplicationBuilder().token(token).build()
+
+    # Inyectar dependencias en bot_data (aquí, NO en post_init)
+    application.bot_data["story_director"] = story_director
+
+    # Registrar handlers
     register_player_handlers(application)
     logger.info("[PlayerHandler] Comandos /status, /progress y /scene registrados.")
     logger.info("🤖 SAM The Dungeon Bot iniciado correctamente.")
     logger.info("Esperando comandos en Telegram...")
 
-    # ✅ Sin resolve_used_update_types
+    # Ejecutar bot (sin resolve_used_update_types y sin post_init raro)
     application.run_polling()
 
 
