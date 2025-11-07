@@ -1,3 +1,12 @@
+# ================================================================
+# 🎯 CAMPAIGN HANDLER
+# ================================================================
+# Controla los comandos relacionados con la campaña:
+#   /progress – muestra el estado actual de la campaña
+#   /restart  – reinicia la campaña desde el inicio
+#   /loadcampaign <slug> – cambia de campaña
+# ================================================================
+
 from telegram.ext import CommandHandler
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -17,6 +26,7 @@ async def loadcampaign(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Usa: `/loadcampaign <slug>`", parse_mode="Markdown")
         return
+
     slug = context.args[0]
     try:
         sd.load_campaign(slug)
