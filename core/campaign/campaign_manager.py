@@ -1,108 +1,127 @@
-# ================================================================
-# 📘 CAMPAIGN MANAGER – Fase 7.5 (SRD Adaptada)
-# ================================================================
-# Gestiona el progreso de campañas pre-creadas.
-# Permite guardar y restaurar:
-# - Escena actual
-# - Capítulo de campaña
-# - Estado del grupo (party)
-# - Objetivos completados o pendientes
-# ================================================================
-
-import json
 import os
-from datetime import datetime
+import json
+import logging
+from typing import Dict, Any, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class CampaignManager:
     """
-    Administra el estado actual de una campaña pre-creada SRD 5.1.2.
+    Administra la campaña activa: nombre, capítulo y escena actual.
+    Guarda en data/campaign_state.json
     """
 
-    def __init__(self, campaign_id="default_campaign", save_path="data/campaign_state.json"):
-        self.campaign_id = campaign_id
-        self.save_path = save_path
-        self.state = self._load_state()
+    STATE_PATH = "data/campaign_state.json"
 
-    # =========================================================
-    # CARGA Y GUARDADO DE ESTADO
-    # =========================================================
-    def _load_state(self):
-        if os.path.exists(self.save_path):
-            try:
-                with open(self.save_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if data.get("campaign_id") == self.campaign_id:
-                        return data
-            except Exception as e:
-                print(f"[CampaignManager] Error cargando estado: {e}")
-        # Estado inicial por defecto
+    def __init__(self) -> None:
+        self.campaign_slug = "TheGeniesWishes"
+        self.chapter = 1
+        self.active_scene_id = "intro"
+        self.players: Dict[int, str] = {}
+        self.scenes: Dict[str, Dict[str, Any]] = self._default_scenes()
+
+        os.makedirs("data", exist_ok=True)
+        self._load_state()
+
+    # ------------------------------------------------------------------
+    def _default_scenes(self) -> Dict[str, Dict[str, Any]]:
         return {
-            "campaign_id": self.campaign_id,
-            "current_chapter": 1,
-            "active_scene": None,
-            "party": [],
-            "completed_quests": [],
-            "pending_quests": [],
-            "last_updated": str(datetime.now())
+            "intro": {
+                "id": "intro",
+                "title": "Oasis perdido",
+                "description": (
+                    "El sol del desierto cae sin piedad. Ustedes han llegado a un oasis medio abandonado, "
+                    "donde se rumorea que alguien vio una lámpara antigua..."
+                ),
+                "objectives": [
+                    "Escape del oasis",
+                    "Encontrar la lámpara del genio",
+                ],
+            }
         }
 
-    def save_state(self):
-        self.state["last_updated"] = str(datetime.now())
-        os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
-        with open(self.save_path, "w", encoding="utf-8") as f:
-            json.dump(self.state, f, indent=2, ensure_ascii=False)
-        print(f"[CampaignManager] Estado guardado en {self.save_path}")
+    # ------------------------------------------------------------------
+    def _load_state(self) -> None:
+        if os.path.exists(self.STATE_PATH):
+            try:
+                with open(self.STATE_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.campaign_slug = data.get("campaign_slug", self.campaign_slug)
+                self.chapter = data.get("chapter", self.chapter)
+                self.active_scene_id = data.get("active_scene_id", self.active_scene_id)
+                self.players = data.get("players", self.players)
+                # permitir que se graben escenas nuevas
+                self.scenes.update(data.get("scenes", {}))
+                logger.info("[CampaignManager] Estado cargado en data/campaign_state.json")
+            except Exception as e:
+                logger.warning(f"[CampaignManager] No se pudo cargar el estado: {e}")
+        else:
+            # guardar default
+            self._save_state()
 
-    # =========================================================
-    # ACTUALIZACIÓN DE PROGRESO
-    # =========================================================
-    def update_scene(self, scene_name):
-        self.state["active_scene"] = scene_name
-        self.save_state()
+    def _save_state(self) -> None:
+        data = self.to_dict()
+        try:
+            with open(self.STATE_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logger.info("[CampaignManager] Estado guardado en data/campaign_state.json")
+        except Exception as e:
+            logger.warning(f"[CampaignManager] No se pudo guardar el estado: {e}")
 
-    def advance_chapter(self):
-        self.state["current_chapter"] += 1
-        self.save_state()
+    # ------------------------------------------------------------------
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "campaign_slug": self.campaign_slug,
+            "chapter": self.chapter,
+            "active_scene_id": self.active_scene_id,
+            "players": self.players,
+            "scenes": self.scenes,
+        }
 
-    def add_completed_quest(self, quest_name):
-        if quest_name not in self.state["completed_quests"]:
-            self.state["completed_quests"].append(quest_name)
-        if quest_name in self.state["pending_quests"]:
-            self.state["pending_quests"].remove(quest_name)
-        self.save_state()
+    def load_from_dict(self, data: Dict[str, Any]) -> None:
+        if not data:
+            return
+        self.campaign_slug = data.get("campaign_slug", self.campaign_slug)
+        self.chapter = data.get("chapter", self.chapter)
+        self.active_scene_id = data.get("active_scene_id", self.active_scene_id)
+        self.players = data.get("players", self.players)
+        self.scenes.update(data.get("scenes", {}))
 
-    def add_pending_quest(self, quest_name):
-        if quest_name not in self.state["pending_quests"]:
-            self.state["pending_quests"].append(quest_name)
-        self.save_state()
+    # ------------------------------------------------------------------
+    # API pública
+    # ------------------------------------------------------------------
+    def add_player(self, user_id: int, name: str) -> None:
+        self.players[str(user_id)] = name
+        self._save_state()
 
-    def set_party(self, party_names):
-        self.state["party"] = party_names
-        self.save_state()
+    def get_active_scene(self) -> Optional[Dict[str, Any]]:
+        return self.scenes.get(self.active_scene_id)
 
-    # =========================================================
-    # OBTENCIÓN DE ESTADO
-    # =========================================================
-    def get_summary(self):
-        summary = (
-            f"📘 *Campaña:* {self.state['campaign_id']}\n"
-            f"📖 *Capítulo:* {self.state['current_chapter']}\n"
-            f"🎭 *Escena activa:* {self.state['active_scene'] or 'N/A'}\n"
-            f"🧙‍♂️ *Personajes:* {', '.join(self.state['party']) or 'Sin grupo'}\n"
-            f"✅ *Completadas:* {', '.join(self.state['completed_quests']) or 'Ninguna'}\n"
-            f"🗺️ *Pendientes:* {', '.join(self.state['pending_quests']) or 'Ninguna'}\n"
-        )
-        return summary
+    def set_active_scene(self, scene_id: str) -> None:
+        if scene_id in self.scenes:
+            self.active_scene_id = scene_id
+            self._save_state()
 
+    def get_progress(self) -> Dict[str, Any]:
+        active_scene = self.get_active_scene()
+        if not active_scene:
+            return {
+                "campaign": self.campaign_slug,
+                "chapter": self.chapter,
+                "active_scene": None,
+                "players": self.players,
+                "completed": [],
+                "pending": [],
+            }
 
-# =========================================================
-# DEMO LOCAL
-# =========================================================
-if __name__ == "__main__":
-    manager = CampaignManager("The_Genie_s_Wishes")
-    manager.set_party(["Pimp", "Asterix"])
-    manager.update_scene("progress_scene.json")
-    manager.add_pending_quest("Recuperar la lámpara perdida")
-    manager.add_completed_quest("Escapar del oasis")
-    print(manager.get_summary())
+        objectives = active_scene.get("objectives", [])
+        return {
+            "campaign": self.campaign_slug,
+            "chapter": self.chapter,
+            "active_scene": active_scene.get("id"),
+            "active_scene_title": active_scene.get("title"),
+            "players": self.players,
+            "completed": [],
+            "pending": objectives,
+        }
