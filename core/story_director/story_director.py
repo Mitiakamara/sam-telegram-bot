@@ -86,7 +86,7 @@ class StoryDirector:
 
     def get_player_status(self, telegram_id=None):
         """Muestra estado narrativo general."""
-        emotion = self.emotion_tracker.get_current_emotion()
+        emotion = self.emotion_tracker.current_emotion
         return (
             f"🎭 Estado emocional: *{emotion.capitalize()}*\n"
             f"📖 Escena actual: {self.active_scene['title'] if self.active_scene else 'N/A'}"
