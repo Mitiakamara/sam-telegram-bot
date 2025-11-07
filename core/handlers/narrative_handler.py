@@ -1,3 +1,11 @@
+# ================================================================
+# 🎬 NARRATIVE HANDLER
+# ================================================================
+# Controla los comandos narrativos:
+#   /scene – muestra o continúa la escena actual
+#   /event <tipo> – ejecuta un evento narrativo
+# ================================================================
+
 from telegram.ext import CommandHandler
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -10,7 +18,9 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sd = context.bot_data.get("story_director")
     if not context.args:
-        await update.message.reply_text("Usa: `/event <tipo>` (ej: `/event combat_victory`)", parse_mode="Markdown")
+        await update.message.reply_text(
+            "Usa: `/event <tipo>` (ej: `/event combat_victory`)", parse_mode="Markdown"
+        )
         return
     result = sd.trigger_event(context.args[0])
     await update.message.reply_text(result, parse_mode="Markdown")
