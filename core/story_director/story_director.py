@@ -1,132 +1,143 @@
+import json
+import os
 import logging
-from core.emotion.emotional_tracker import EmotionalTracker
-from core.auto_narrator.auto_narrator import AutoNarrator
-from core.campaign.campaign_manager import CampaignManager
+from typing import Dict, Any, Optional
 
-logger = logging.getLogger("StoryDirector")
+from core.campaign.campaign_manager import CampaignManager
+from core.auto_narrator import AutoNarrator
+from core.character_builder import CharacterBuilder
+
+logger = logging.getLogger(__name__)
+
+
+class EmotionalTracker:
+    """
+    Versión mínima para no romper cuando el handler llama a get_current_emotion().
+    """
+    def __init__(self) -> None:
+        self.current_emotion = "neutral"
+        logger.info("[EmotionalTracker] Inicializado correctamente.")
+
+    def get_current_emotion(self) -> str:
+        return self.current_emotion
+
+    def set_emotion(self, emotion: str) -> None:
+        self.current_emotion = emotion
 
 
 class StoryDirector:
     """
-    Control central de la narrativa y el estado emocional del mundo.
-    Coordina personajes, escenas y el tono narrativo global.
+    Orquesta la historia, los jugadores y la campaña.
     """
 
-    def __init__(self):
-        self.players = {}
+    STATE_PATH = "data/story_director_state.json"
+
+    def __init__(self) -> None:
         self.emotion_tracker = EmotionalTracker()
-        self.narrator = AutoNarrator()
         self.campaign_manager = CampaignManager()
-        logger.info("[StoryDirector] Inicializado correctamente.")
+        self.auto_narrator = AutoNarrator()
+        self.character_builder = CharacterBuilder()
+        self.players: Dict[int, Dict[str, Any]] = {}
 
-    # ============================================================
-    # 👥 Gestión de jugadores
-    # ============================================================
+        # intentar cargar estado previo
+        self._ensure_data_dir()
+        self._load_state()
 
-    def add_player(self, player_data):
-        """Agrega un jugador al registro de la historia."""
-        player_id = player_data.get("id") or player_data.get("user_id")
-        if not player_id:
-            logger.warning("[StoryDirector] No se pudo agregar jugador: falta ID.")
-            return False
+    # ------------------------------------------------------------------
+    # Persistencia básica
+    # ------------------------------------------------------------------
+    def _ensure_data_dir(self) -> None:
+        os.makedirs("data", exist_ok=True)
 
-        self.players[player_id] = player_data
-        logger.info(f"[StoryDirector] Personaje añadido: {player_data.get('name', 'Desconocido')}")
-        return True
+    def _load_state(self) -> None:
+        if os.path.exists(self.STATE_PATH):
+            try:
+                with open(self.STATE_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.players = data.get("players", {})
+                self.campaign_manager.load_from_dict(data.get("campaign", {}))
+                logger.info("[StoryDirector] Estado cargado correctamente.")
+            except Exception as e:
+                logger.warning(f"[StoryDirector] No se pudo cargar el estado: {e}")
 
-    def get_player(self, player_id):
-        return self.players.get(player_id)
+    def _save_state(self) -> None:
+        data = {
+            "players": self.players,
+            "campaign": self.campaign_manager.to_dict(),
+        }
+        try:
+            with open(self.STATE_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logger.info("[StoryDirector] Estado guardado.")
+        except Exception as e:
+            logger.warning(f"[StoryDirector] No se pudo guardar el estado: {e}")
 
-    def remove_player(self, player_id):
-        if player_id in self.players:
-            del self.players[player_id]
-            logger.info(f"[StoryDirector] Jugador {player_id} eliminado de la campaña.")
+    # ------------------------------------------------------------------
+    # Gestión de jugadores
+    # ------------------------------------------------------------------
+    def create_player_character(self, user_id: int, name: str) -> Dict[str, Any]:
+        """
+        Crea un PJ con el CharacterBuilder y lo asocia al user_id.
+        """
+        character = self.character_builder.create_character(name)
+        self.players[user_id] = character
+        # lo añadimos a la campaña
+        self.campaign_manager.add_player(user_id, name)
+        self._save_state()
+        logger.info(f"[StoryDirector] Personaje creado para {user_id}: {name}")
+        return character
 
-    # ============================================================
-    # 📖 Gestión de escenas y narrativa
-    # ============================================================
+    def get_player(self, user_id: int) -> Optional[Dict[str, Any]]:
+        return self.players.get(user_id)
 
-    def get_current_scene(self):
-        """Obtiene la escena activa desde CampaignManager."""
-        state = self.campaign_manager.get_state()
-        return state.get("current_scene") if state else None
-
-    def set_scene(self, scene_id, scene_data):
-        """Actualiza la escena activa en la campaña."""
-        self.campaign_manager.update_scene(scene_id, scene_data)
-        logger.info(f"[StoryDirector] Escena actualizada: {scene_id}")
-
-    def generate_scene_description(self):
-        """Genera una descripción adaptada según el estado emocional."""
-        emotion = self.emotion_tracker.current_emotion or "neutral"
-        base_scene = self.get_current_scene() or "No hay ninguna escena activa."
-        description = self.narrator.generate_description(base_scene, emotion)
-        logger.info(f"[StoryDirector] Descripción generada con emoción '{emotion}'.")
-        return description
-
-    # ============================================================
-    # 💬 Estado del jugador
-    # ============================================================
-
-    def get_player_status(self, player_id):
-        """Devuelve el estado actual del jugador con tono y emoción."""
-        player = self.get_player(player_id)
+    def get_player_status(self, user_id: int) -> Dict[str, Any]:
+        """
+        Devuelve algo seguro aunque no exista el jugador.
+        """
+        player = self.players.get(user_id)
+        emotion = self.emotion_tracker.get_current_emotion()
         if not player:
-            return "❌ No se encontró al jugador en la campaña."
+            return {
+                "found": False,
+                "message": "No se encontró al jugador en la campaña.",
+                "emotion": emotion,
+            }
+        return {
+            "found": True,
+            "player": player,
+            "emotion": emotion,
+        }
 
-        # Corregido: acceder al atributo directamente
-        emotion = getattr(self.emotion_tracker, "current_emotion", "neutral") or "neutral"
+    # ------------------------------------------------------------------
+    # Narrativa / campaña
+    # ------------------------------------------------------------------
+    def get_current_scene(self) -> Dict[str, Any]:
+        scene = self.campaign_manager.get_active_scene()
+        if not scene:
+            return {
+                "found": False,
+                "message": "No hay ninguna escena activa.",
+            }
+        # Podríamos pasarla por el auto narrador
+        narrated = self.auto_narrator.narrate_scene(scene)
+        return {
+            "found": True,
+            "scene": scene,
+            "narrated": narrated,
+        }
 
-        return (
-            f"🧙 Personaje: {player.get('name', 'Desconocido')}\n"
-            f"🎭 Estado emocional: {emotion}\n"
-            f"⚔️ Clase: {player.get('class', '—')}\n"
-            f"🎚 Nivel: {player.get('level', 1)}\n"
-            f"❤️ HP: {player.get('hp', '—')}\n"
-            f"💫 XP: {player.get('xp', 0)}"
-        )
+    def get_campaign_progress(self) -> Dict[str, Any]:
+        return self.campaign_manager.get_progress()
 
-    # ============================================================
-    # 🧭 Estado de la campaña
-    # ============================================================
+    # ------------------------------------------------------------------
+    # Utilidades llamadas por handlers
+    # ------------------------------------------------------------------
+    def ensure_player(self, user_id: int, username: str) -> Dict[str, Any]:
+        """
+        Si el jugador no existe, se crea rápido con su username.
+        Útil para /join.
+        """
+        if user_id not in self.players:
+            self.create_player_character(user_id, username)
+        return self.players[user_id]
 
-    def get_campaign_progress(self):
-        """Devuelve información resumida sobre la campaña activa."""
-        campaign = self.campaign_manager.get_state()
-        if not campaign:
-            return "❌ No hay campaña activa en este momento."
-
-        chapter = campaign.get("chapter", "—")
-        current_scene = campaign.get("current_scene", "Ninguna")
-        completed = ", ".join(campaign.get("completed_scenes", [])) or "Ninguna"
-        pending = ", ".join(campaign.get("pending_scenes", [])) or "Ninguna"
-        active_players = ", ".join([p.get("name", "—") for p in self.players.values()]) or "Ninguno"
-
-        return (
-            f"📘 Campaña: {campaign.get('name', 'Sin nombre')}\n"
-            f"📖 Capítulo: {chapter}\n"
-            f"🎭 Escena activa: {current_scene}\n"
-            f"🧙‍♂️ Personajes: {active_players}\n"
-            f"✅ Completadas: {completed}\n"
-            f"🗺️ Pendientes: {pending}"
-        )
-
-    # ============================================================
-    # ⚙️ Persistencia
-    # ============================================================
-
-    def save_state(self):
-        """Guarda el estado actual de la campaña."""
-        try:
-            self.campaign_manager.save_state()
-            logger.info("[StoryDirector] Estado de campaña guardado correctamente.")
-        except Exception as e:
-            logger.error(f"[StoryDirector] Error al guardar el estado: {e}")
-
-    def load_state(self):
-        """Carga el estado guardado."""
-        try:
-            self.campaign_manager.load_state()
-            logger.info("[StoryDirector] Estado de campaña cargado correctamente.")
-        except Exception as e:
-            logger.error(f"[StoryDirector] Error al cargar el estado: {e}")
