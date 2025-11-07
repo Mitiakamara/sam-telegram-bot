@@ -1,4 +1,5 @@
 import logging
+import inspect
 from typing import Any
 
 from telegram import Update
@@ -36,7 +37,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 # ---------------------------------------------------------------------
-# /createcharacter (conversación corta)
+# /createcharacter
 # ---------------------------------------------------------------------
 async def createcharacter_entry(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -52,10 +53,8 @@ async def createcharacter_name(
     user = update.effective_user
     context.user_data["character_name"] = character_name
 
-    # intentamos persistir en el campaign_manager si lo pasamos por bot_data
     campaign_manager = context.application.bot_data.get("campaign_manager")
 
-    # guardado defensivo: probamos varios nombres de método
     if campaign_manager is not None:
         saved = False
         for method_name in (
@@ -65,29 +64,30 @@ async def createcharacter_name(
             "set_player_character",
         ):
             if hasattr(campaign_manager, method_name):
+                method = getattr(campaign_manager, method_name)
                 try:
-                    getattr(campaign_manager, method_name)(
-                        user_id=user.id,
-                        username=user.username or user.full_name,
-                        character_name=character_name,
-                    )
+                    sig = inspect.signature(method)
+                    params = list(sig.parameters.keys())
+                    if params and params[0] == "self":
+                        params = params[1:]
+
+                    # Detectamos la firma y llamamos correctamente
+                    if len(params) == 2:
+                        # (user_id, character_name)
+                        method(user.id, character_name)
+                    elif len(params) == 3:
+                        # (user_id, username, character_name)
+                        method(user.id, user.username or user.full_name, character_name)
+                    else:
+                        # fallback genérico con kwargs
+                        method(
+                            user_id=user.id,
+                            username=user.username or user.full_name,
+                            character_name=character_name,
+                        )
                     saved = True
                     break
-                except TypeError:
-                    # por si la firma es distinta
-                    try:
-                        getattr(campaign_manager, method_name)(
-                            user.id, user.username or user.full_name, character_name
-                        )
-                        saved = True
-                        break
-                    except Exception as e:  # noqa
-                        logger.warning(
-                            "[PlayerHandler] No se pudo guardar personaje con %s: %s",
-                            method_name,
-                            e,
-                        )
-                except Exception as e:  # noqa
+                except Exception as e:
                     logger.warning(
                         "[PlayerHandler] No se pudo guardar personaje con %s: %s",
                         method_name,
@@ -96,7 +96,7 @@ async def createcharacter_name(
 
         if saved:
             await update.message.reply_text(
-                f"✅ Personaje **{character_name}** creado y asociado a tu usuario.",
+                f"✅ Personaje **{character_name}** creado y guardado en la campaña.",
                 parse_mode="Markdown",
             )
         else:
@@ -136,39 +136,40 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     joined = False
     error_msg = None
+    char_name = context.user_data.get("character_name", "Sin nombre")
 
-    # probamos con algunos nombres típicos
     for method_name in ("add_player", "join_player", "join", "add_or_update_player"):
         if hasattr(campaign_manager, method_name):
+            method = getattr(campaign_manager, method_name)
             try:
-                getattr(campaign_manager, method_name)(
-                    user_id=user.id,
-                    username=user.username or user.full_name,
-                    character_name=context.user_data.get("character_name"),
-                )
+                sig = inspect.signature(method)
+                params = list(sig.parameters.keys())
+                if params and params[0] == "self":
+                    params = params[1:]
+
+                if len(params) == 2:
+                    # (user_id, character_name)
+                    method(user.id, char_name)
+                elif len(params) == 3:
+                    # (user_id, username, character_name)
+                    method(user.id, user.username or user.full_name, char_name)
+                else:
+                    method(
+                        user_id=user.id,
+                        username=user.username or user.full_name,
+                        character_name=char_name,
+                    )
                 joined = True
                 break
-            except TypeError:
-                # tal vez la firma sea distinta
-                try:
-                    getattr(campaign_manager, method_name)(
-                        user.id,
-                        user.username or user.full_name,
-                        context.user_data.get("character_name"),
-                    )
-                    joined = True
-                    break
-                except Exception as e:  # noqa
-                    error_msg = str(e)
-            except Exception as e:  # noqa
+            except Exception as e:
                 error_msg = str(e)
+                logger.warning("[PlayerHandler] No se pudo unir jugador: %s", e)
 
     if joined:
-        await update.message.reply_text("✅ Te uniste a la campaña.")
+        await update.message.reply_text(f"✅ Te uniste a la campaña como **{char_name}**.")
     else:
         await update.message.reply_text(
             "⚠️ No pude unirte a la campaña. "
-            "Es posible que el CampaignManager use otro nombre de método.\n"
             f"{'Detalle: ' + error_msg if error_msg else ''}"
         )
 
@@ -180,7 +181,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user = update.effective_user
     campaign_manager = context.application.bot_data.get("campaign_manager")
 
-    # primero intentamos verlo en el campaign_manager
     if campaign_manager is not None:
         player_info = None
         for method_name in ("get_player", "get_player_by_id", "fetch_player"):
@@ -192,7 +192,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     pass
 
         if player_info:
-            # asumimos que player_info es dict-like
             char_name = player_info.get("character_name") or "Sin nombre"
             await update.message.reply_text(
                 f"🧙‍♂️ Estado de {char_name}\n"
@@ -201,7 +200,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
-    # fallback a lo que tengamos en user_data
+    # fallback
     character_name = context.user_data.get("character_name")
     if character_name:
         await update.message.reply_text(
@@ -225,12 +224,11 @@ async def progress_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return
 
-    # tratamos de extraer datos mínimamente comunes
     campaign_name = getattr(campaign_manager, "campaign_name", "Desconocida")
     current_chapter = getattr(campaign_manager, "current_chapter", "Desconocido")
     current_scene = getattr(campaign_manager, "current_scene_title", "Desconocida")
 
-    players_text = "Desconocido"
+    players_text = "Ninguno"
     for attr in ("players", "players_state", "registered_players"):
         if hasattr(campaign_manager, attr):
             players_val = getattr(campaign_manager, attr)
@@ -264,7 +262,6 @@ async def scene_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("⚠️ No pude mostrar la escena actual.")
         return
 
-    # intentamos obtener el texto de escena
     scene_text = None
     for method_name in ("get_current_scene_text", "get_scene_text", "get_current_scene"):
         if hasattr(campaign_manager, method_name):
@@ -277,7 +274,6 @@ async def scene_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if scene_text:
         await update.message.reply_text(scene_text)
     else:
-        # fallback a atributos
         title = getattr(campaign_manager, "current_scene_title", "Escena desconocida")
         await update.message.reply_text(
             f"📜 {title}\n\nEl sol del desierto cae sin piedad. "
@@ -286,20 +282,16 @@ async def scene_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 # ---------------------------------------------------------------------
-# REGISTRO
+# REGISTRO DE HANDLERS
 # ---------------------------------------------------------------------
 def register_player_handlers(application: Application, campaign_manager: Any) -> None:
-    """
-    Registra todos los comandos de jugador en la aplicación de Telegram
-    y guarda el campaign_manager en bot_data para que lo usen los handlers.
-    """
-    # lo dejamos accesible para todos los handlers
+    """Registra todos los comandos y guarda el CampaignManager para los handlers."""
     application.bot_data["campaign_manager"] = campaign_manager
 
     # /start
     application.add_handler(CommandHandler("start", start_command))
 
-    # /createcharacter -> conversación
+    # /createcharacter
     createcharacter_conv = ConversationHandler(
         entry_points=[CommandHandler("createcharacter", createcharacter_entry)],
         states={
