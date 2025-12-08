@@ -264,9 +264,26 @@ class CampaignManager:
         Útil para restaurar desde StoryDirector.
         """
         if data:
+            # Preservar adventure_data y campos relacionados si existen
+            adventure_data = data.get("adventure_data")
+            current_scene_id = data.get("current_scene_id")
+            adventure_scenes = data.get("adventure_scenes")
+            campaign_title = data.get("campaign_title")
+            
             self.state.update(data)
+            
+            # Asegurar que adventure_data se preserve
+            if adventure_data:
+                self.state["adventure_data"] = adventure_data
+            if current_scene_id:
+                self.state["current_scene_id"] = current_scene_id
+            if adventure_scenes:
+                self.state["adventure_scenes"] = adventure_scenes
+            if campaign_title:
+                self.state["campaign_title"] = campaign_title
+            
             self._save_state()
-            self.logger.info("[CampaignManager] Estado cargado desde diccionario.")
+            self.logger.info(f"[CampaignManager] Estado cargado desde diccionario. adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}")
 
     def to_dict(self) -> Dict[str, Any]:
         """
