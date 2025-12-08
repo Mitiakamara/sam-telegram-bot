@@ -1,13 +1,15 @@
 from typing import Dict, Any, List
-
+from core.character_builder.enhanced_builder import EnhancedCharacterBuilder
 
 class CharacterBuilderInteractive:
     """
     Builder guiado con pasos predefinidos y validaciones SRD básicas.
+    Now enhanced with SRD integration, racial bonuses, and skill selection.
     """
 
     def __init__(self):
-        self.steps = ["name", "race", "class", "background", "attributes", "confirm"]
+        self.steps = ["name", "race", "class", "background", "attributes", "skills", "confirm"]
+        self.enhanced_builder = EnhancedCharacterBuilder()
 
         self.races = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Tiefling", "Gnome"]
         self.classes = ["Fighter", "Wizard", "Cleric", "Rogue", "Paladin", "Bard", "Ranger"]
@@ -16,7 +18,7 @@ class CharacterBuilderInteractive:
     # -----------------------------------------------------
     #  PROMPTS
     # -----------------------------------------------------
-    def get_prompt(self, step: str) -> str:
+    def get_prompt(self, step: str, data: Dict[str, Any] = None) -> str:
         prompts = {
             "name": "🧙‍♂️ ¿Cómo se llamará tu personaje?",
             "race": "🏹 Elige una raza:",
@@ -25,11 +27,42 @@ class CharacterBuilderInteractive:
             "attributes": (
                 "💪 Asigna tus atributos (STR, DEX, CON, INT, WIS, CHA).\n"
                 "Formato: `15 14 13 12 10 8`\n"
-                "O deja vacío para usar el estándar."
+                "O deja vacío para usar el estándar.\n"
+                "⚠️ Nota: Los bonos raciales se aplicarán automáticamente."
             ),
+            "skills": self._get_skills_prompt(data or {}),
             "confirm": "✅ ¿Confirmas la creación del personaje? (sí/no)",
         }
         return prompts.get(step, "")
+    
+    def _get_skills_prompt(self, data: Dict[str, Any]) -> str:
+        """Genera el prompt de habilidades basado en clase y trasfondo."""
+        class_name = data.get("class")
+        background = data.get("background")
+        
+        if not class_name:
+            return "📚 Selecciona tus habilidades (se mostrarán después de elegir clase):"
+        
+        class_skills = self.enhanced_builder.get_class_skills(class_name)
+        background_skills = self.enhanced_builder.get_background_skills(background) if background else []
+        
+        # Combine and remove duplicates
+        all_skills = list(set(class_skills + background_skills))
+        
+        # Determine how many skills to choose (typically 2 from class)
+        num_skills = 2
+        
+        prompt = (
+            f"📚 Selecciona {num_skills} habilidades de tu clase:\n"
+            f"Opciones: {', '.join(class_skills[:10])}{'...' if len(class_skills) > 10 else ''}\n"
+            f"Escribe los nombres separados por comas (ej: Perception, Stealth)\n"
+            f"O deja vacío para usar las predeterminadas."
+        )
+        
+        if background_skills:
+            prompt += f"\n\n✨ Tu trasfondo ({background}) ya te da: {', '.join(background_skills)}"
+        
+        return prompt
 
     # -----------------------------------------------------
     #  BOTONES
@@ -80,7 +113,7 @@ class CharacterBuilderInteractive:
             if not value:
                 # estándar
                 data["attributes"] = {"STR": 15, "DEX": 14, "CON": 13, "INT": 12, "WIS": 10, "CHA": 8}
-                data["modifiers"] = {"STR": 2, "DEX": 2, "CON": 1, "INT": 1, "WIS": 0, "CHA": -1}
+                # Note: modifiers will be recalculated after racial bonuses
                 return True
 
             try:
@@ -89,10 +122,33 @@ class CharacterBuilderInteractive:
                     return False
                 stats = ["STR", "DEX", "CON", "INT", "WIS", "CHA"]
                 data["attributes"] = dict(zip(stats, vals))
-                data["modifiers"] = {k: (v - 10) // 2 for k, v in data["attributes"].items()}
+                # Note: modifiers will be recalculated after racial bonuses
                 return True
             except Exception:
                 return False
+
+        if step == "skills":
+            class_name = data.get("class")
+            if not class_name:
+                return False
+            
+            if not value:
+                # Use default: first 2 class skills
+                class_skills = self.enhanced_builder.get_class_skills(class_name)
+                data["selected_skills"] = class_skills[:2] if len(class_skills) >= 2 else class_skills
+                return True
+            
+            # Parse comma-separated skills
+            selected = [s.strip() for s in value.split(",")]
+            class_skills = self.enhanced_builder.get_class_skills(class_name)
+            
+            # Validate all selected skills are in class list
+            valid_skills = [s for s in selected if s in class_skills]
+            if len(valid_skills) < 1:
+                return False
+            
+            data["selected_skills"] = valid_skills[:4]  # Limit to 4 skills
+            return True
 
         if step == "confirm":
             return value.lower() in ["si", "sí", "yes", "y"]
@@ -102,16 +158,13 @@ class CharacterBuilderInteractive:
     # -----------------------------------------------------
     #  FINALIZACIÓN
     # -----------------------------------------------------
-    def finalize_character(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Devuelve el dict final del personaje."""
-        return {
-            "name": data.get("name"),
-            "race": data.get("race"),
-            "class": data.get("class"),
-            "background": data.get("background"),
-            "level": 1,
-            "attributes": data.get("attributes"),
-            "modifiers": data.get("modifiers"),
-            "skills": ["Perception", "Stealth"],
-            "spells": [],
-        }
+    async def finalize_character(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Devuelve el dict final del personaje con todas las mejoras:
+        - Bonos raciales aplicados
+        - Habilidades calculadas
+        - Hechizos cargados (si aplica)
+        - Características de trasfondo
+        """
+        # Use enhanced builder for finalization
+        return await self.enhanced_builder.finalize_character_enhanced(data)

@@ -72,7 +72,8 @@ RACE = 1      # Inline keyboard buttons
 CLASS = 2     # Inline keyboard buttons
 BACKGROUND = 3 # Inline keyboard buttons
 ATTRIBUTES = 4 # Text input (optional)
-CONFIRM = 5   # Text input (yes/no)
+SKILLS = 5    # Text input (comma-separated, optional)
+CONFIRM = 6   # Text input (yes/no)
 ```
 
 **Key Features**:
@@ -122,23 +123,33 @@ CONFIRM = 5   # Text input (yes/no)
   "background": "Folk Hero",
   "level": 1,
   "attributes": {
-    "STR": 15,
-    "DEX": 14,
-    "CON": 13,
-    "INT": 12,
-    "WIS": 10,
-    "CHA": 8
+    "STR": 16,  // 15 + 1 (Human bonus)
+    "DEX": 15,  // 14 + 1 (Human bonus)
+    "CON": 14,  // 13 + 1 (Human bonus)
+    "INT": 13,  // 12 + 1 (Human bonus)
+    "WIS": 11,  // 10 + 1 (Human bonus)
+    "CHA": 9    // 8 + 1 (Human bonus)
   },
   "modifiers": {
-    "STR": 2,
+    "STR": 3,
     "DEX": 2,
-    "CON": 1,
+    "CON": 2,
     "INT": 1,
     "WIS": 0,
     "CHA": -1
   },
-  "skills": ["Perception", "Stealth"],
-  "spells": [],
+  "skills": ["Animal Handling", "Survival"],
+  "skill_modifiers": {
+    "Animal Handling": 2,  // WIS modifier + proficiency
+    "Survival": 2
+  },
+  "spells": ["Cure Wounds", "Hunter's Mark"],
+  "spell_slots": {"1st": 0},  // Rangers get spells at level 2
+  "background_feature": {
+    "name": "Rustic Hospitality",
+    "description": "Since you come from the ranks of the common folk, you fit in among them with ease."
+  },
+  "proficiency_bonus": 2,
   "telegram_id": 123456789
 }
 ```
@@ -215,10 +226,38 @@ Bot: 💪 Asigna tus atributos (STR, DEX, CON, INT, WIS, CHA).
      O deja vacío para usar el estándar.
 
 User: [leaves empty]
-Bot: ✅ ¿Confirmas la creación del personaje? (sí/no)
+Bot: 📚 Selecciona 2 habilidades de tu clase:
+     Opciones: Animal Handling, Athletics, Insight, Investigation, Nature, Perception, Stealth, Survival
+     Escribe los nombres separados por comas (ej: Perception, Stealth)
+     O deja vacío para usar las predeterminadas.
+     
+     ✨ Tu trasfondo (Folk Hero) ya te da: Animal Handling, Survival
+
+User: Perception, Stealth
+Bot: ✅ Habilidades seleccionadas: Perception, Stealth, Animal Handling, Survival
+     
+     ✅ ¿Confirmas la creación del personaje? (sí/no)
 
 User: sí
-Bot: ✅ Personaje *Aragorn* creado y guardado en la campaña.
+Bot: 🔄 Creando personaje con mejoras SRD... (esto puede tomar unos segundos)
+Bot: ✅ *Personaje Aragorn creado y guardado*
+     
+     🏹 Raza: Human
+     ⚔️ Clase: Ranger
+     📊 Atributos (con bonos raciales):
+       • STR: 16 (+3)
+       • DEX: 15 (+2)
+       • CON: 14 (+2)
+       • INT: 13 (+1)
+       • WIS: 11 (+0)
+       • CHA: 9 (-1)
+     
+     📚 Habilidades: Perception, Stealth, Animal Handling, Survival
+     
+     ✨ Hechizos: Cure Wounds, Hunter's Mark
+     
+     🎭 Característica de trasfondo: *Rustic Hospitality*
+     Since you come from the ranks of the common folk, you fit in among them with ease.
 ```
 
 ---
@@ -280,14 +319,23 @@ data["attributes"] = {"STR": 15, "DEX": 14, ...}  # Modify here
 
 ---
 
-## 🐛 Known Limitations
+## ✅ Recent Enhancements (v7.7.0)
 
-1. **No SRD Validation**: Options are hardcoded, not validated against SRD
-2. **Fixed Skill List**: All characters get `["Perception", "Stealth"]` regardless of class
-3. **No Spell Selection**: Spellcasting classes get empty `spells: []`
-4. **No Racial Bonuses**: Attributes don't get racial bonuses applied
-5. **No Background Features**: Background selection doesn't grant features
-6. **Simple Modifiers**: Only calculates basic modifiers, no proficiency/expertise
+1. **SRD Integration**: ✅ Queries `sam-srdservice` for race/class features and spells
+2. **Racial Bonuses**: ✅ Automatically applies racial ability score improvements
+3. **Spell Loading**: ✅ Loads appropriate spells for spellcasting classes
+4. **Skill Selection**: ✅ Users can choose skills based on class and background
+5. **Background Features**: ✅ Grants background features and traits
+6. **Enhanced Modifiers**: ✅ Calculates skill modifiers with proficiency bonuses
+7. **Skill Proficiencies**: ✅ Combines class and background skill proficiencies
+
+## 🐛 Remaining Limitations
+
+1. **Limited SRD Queries**: Some SRD lookups may fail gracefully (uses fallback data)
+2. **Fixed Spell Lists**: If SRD lookup fails, uses hardcoded common spells
+3. **No Point Buy**: Only supports standard array or custom input
+4. **No Feat Selection**: No feats available at level 1
+5. **Limited Backgrounds**: Only 6 backgrounds available (can be expanded)
 
 ---
 
