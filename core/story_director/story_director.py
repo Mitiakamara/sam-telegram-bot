@@ -122,8 +122,9 @@ class StoryDirector:
         # Primero verificar si hay una aventura cargada
         adventure_data = self.campaign_manager.state.get("adventure_data")
         current_scene_id = self.campaign_manager.state.get("current_scene_id")
+        campaign_name = self.campaign_manager.state.get("campaign_name", "")
         
-        logger.debug(f"[StoryDirector] get_current_scene - adventure_data exists: {adventure_data is not None}, current_scene_id: {current_scene_id}")
+        logger.info(f"[StoryDirector] get_current_scene - campaign_name: {campaign_name}, adventure_data exists: {adventure_data is not None}, current_scene_id: {current_scene_id}")
         
         if adventure_data and current_scene_id:
             # Buscar la escena en la aventura
@@ -131,7 +132,7 @@ class StoryDirector:
             loader = AdventureLoader()
             scene = loader.find_scene_by_id(adventure_data, current_scene_id)
             if scene:
-                logger.debug(f"[StoryDirector] Found adventure scene: {scene.get('title', 'Unknown')}")
+                logger.info(f"[StoryDirector] Found adventure scene: {scene.get('title', 'Unknown')} (ID: {current_scene_id})")
                 # NO pasar por auto_narrator para escenas de aventura - usar narración directa
                 return {
                     "found": True,
@@ -140,7 +141,29 @@ class StoryDirector:
                     "from_adventure": True,
                 }
             else:
-                logger.warning(f"[StoryDirector] Scene ID '{current_scene_id}' not found in adventure data")
+                logger.warning(f"[StoryDirector] Scene ID '{current_scene_id}' not found in adventure data. Available scenes: {[s.get('scene_id') for s in adventure_data.get('scenes', [])]}")
+        elif campaign_name and campaign_name != "TheGeniesWishes":
+            # Hay una campaña cargada pero no hay adventure_data - intentar recargar
+            logger.warning(f"[StoryDirector] Campaign '{campaign_name}' está cargada pero no hay adventure_data. Intentando recargar...")
+            try:
+                self.load_campaign(campaign_name)
+                # Intentar de nuevo
+                adventure_data = self.campaign_manager.state.get("adventure_data")
+                current_scene_id = self.campaign_manager.state.get("current_scene_id")
+                if adventure_data and current_scene_id:
+                    from core.adventure.adventure_loader import AdventureLoader
+                    loader = AdventureLoader()
+                    scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+                    if scene:
+                        logger.info(f"[StoryDirector] Recargada aventura y encontrada escena: {scene.get('title', 'Unknown')}")
+                        return {
+                            "found": True,
+                            "scene": scene,
+                            "narrated": "",
+                            "from_adventure": True,
+                        }
+            except Exception as e:
+                logger.error(f"[StoryDirector] Error al recargar aventura: {e}")
         
         # Fallback: escena del campaign manager
         # Pero primero verificar si hay una escena guardada en el estado
