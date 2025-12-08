@@ -143,6 +143,23 @@ class StoryDirector:
                 logger.warning(f"[StoryDirector] Scene ID '{current_scene_id}' not found in adventure data")
         
         # Fallback: escena del campaign manager
+        # Pero primero verificar si hay una escena guardada en el estado
+        current_scene_name = self.campaign_manager.state.get("current_scene", "")
+        if current_scene_name and current_scene_name != "Escena no definida":
+            # Intentar construir una escena básica desde el nombre
+            scene = {
+                "title": current_scene_name,
+                "description": f"Escena: {current_scene_name}",
+            }
+            narrated = self.auto_narrator.narrate_scene(scene)
+            return {
+                "found": True,
+                "scene": scene,
+                "narrated": narrated,
+                "from_adventure": False,
+            }
+        
+        # Último fallback: get_active_scene del campaign manager
         scene = self.campaign_manager.get_active_scene()
         if not scene:
             return {
@@ -202,12 +219,18 @@ class StoryDirector:
         
         # Escena generada (fallback)
         narrated = scene_data.get("narrated", "")
-        if narrated:
+        if narrated and narrated.strip():
+            # Si la narración contiene "progress_scene.json", es un error
+            if "progress_scene.json" in narrated:
+                logger.warning(f"[StoryDirector] render_current_scene recibió 'progress_scene.json' en narrated, usando título de escena")
+                title = scene.get("title", "Escena")
+                desc = scene.get("description", scene.get("description_adapted", ""))
+                return f"🎭 *{title}*\n\n{desc}" if desc else f"🎭 *{title}*"
             return narrated
         
         title = scene.get("title", "Escena")
         desc = scene.get("description", scene.get("description_adapted", ""))
-        return f"🎭 *{title}*\n\n{desc}"
+        return f"🎭 *{title}*\n\n{desc}" if desc else f"🎭 *{title}*"
 
     def trigger_event(self, event_type: str) -> str:
         """
