@@ -59,7 +59,28 @@ class StoryDirector:
                 with open(self.STATE_PATH, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self.players = data.get("players", {})
-                self.campaign_manager.load_from_dict(data.get("campaign", {}))
+                campaign_data = data.get("campaign", {})
+                self.campaign_manager.load_from_dict(campaign_data)
+                
+                # Verificar y corregir current_scene si tiene un nombre de archivo JSON
+                current_scene = self.campaign_manager.state.get("current_scene", "")
+                if current_scene and current_scene.endswith(".json"):
+                    logger.warning(f"[StoryDirector] current_scene tiene nombre de archivo JSON: {current_scene}. Corrigiendo...")
+                    # Si hay adventure_data, usar el título de la escena actual
+                    adventure_data = self.campaign_manager.state.get("adventure_data")
+                    current_scene_id = self.campaign_manager.state.get("current_scene_id")
+                    if adventure_data and current_scene_id:
+                        from core.adventure.adventure_loader import AdventureLoader
+                        loader = AdventureLoader()
+                        scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+                        if scene:
+                            self.campaign_manager.state["current_scene"] = scene.get("title", "Escena")
+                            logger.info(f"[StoryDirector] current_scene corregido a: {self.campaign_manager.state['current_scene']}")
+                    else:
+                        # Fallback: usar un nombre genérico
+                        self.campaign_manager.state["current_scene"] = "Escena actual"
+                        logger.info(f"[StoryDirector] current_scene corregido a: Escena actual")
+                
                 logger.info("[StoryDirector] Estado cargado correctamente.")
             except Exception as e:
                 logger.warning(f"[StoryDirector] No se pudo cargar el estado: {e}")
@@ -373,10 +394,12 @@ class StoryDirector:
         if initial_scene:
             scene_title = initial_scene.get("title", "Inicio")
             scene_id = initial_scene.get("scene_id")
+            # Asegurar que current_scene sea el título, no un ID o nombre de archivo
             self.campaign_manager.state["current_scene"] = scene_title
             self.campaign_manager.state["current_scene_id"] = scene_id
             self.campaign_manager.state["adventure_scenes"] = adventure_data.get("scenes", [])
             logger.info(f"[StoryDirector] Escena inicial configurada: {scene_title} (ID: {scene_id})")
+            logger.info(f"[StoryDirector] Verificación: current_scene='{self.campaign_manager.state['current_scene']}', current_scene_id='{scene_id}'")
         else:
             self.campaign_manager.state["current_scene"] = "Inicio"
             logger.warning(f"[StoryDirector] No se encontró escena inicial en la aventura")
