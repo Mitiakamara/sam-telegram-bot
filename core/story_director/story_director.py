@@ -290,6 +290,50 @@ class StoryDirector:
         Renderiza la escena actual como texto para mostrar al usuario.
         Retorna un string formateado.
         """
+        # PRIMERO: Verificar directamente si hay adventure_data y current_scene_id
+        # Esto evita problemas de persistencia
+        adventure_data = self.campaign_manager.state.get("adventure_data")
+        current_scene_id = self.campaign_manager.state.get("current_scene_id")
+        campaign_name = self.campaign_manager.state.get("campaign_name", "")
+        
+        # Si hay adventure_data, intentar mostrar la escena directamente
+        if adventure_data and current_scene_id:
+            from core.adventure.adventure_loader import AdventureLoader
+            loader = AdventureLoader()
+            scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+            if scene:
+                narration = scene.get("narration", "")
+                title = scene.get("title", "Escena")
+                options_text = scene.get("options_text", [])
+                options_list = ""
+                if options_text:
+                    options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
+                return f"🎭 *{title}*\n\n{narration}{options_list}"
+        
+        # Si no hay adventure_data pero hay campaign_name, intentar recargar
+        if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes":
+            logger.warning(f"[StoryDirector] render_current_scene: adventure_data es None, recargando '{campaign_name}'")
+            try:
+                self.load_campaign(campaign_name)
+                # Intentar de nuevo
+                adventure_data = self.campaign_manager.state.get("adventure_data")
+                current_scene_id = self.campaign_manager.state.get("current_scene_id")
+                if adventure_data and current_scene_id:
+                    from core.adventure.adventure_loader import AdventureLoader
+                    loader = AdventureLoader()
+                    scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+                    if scene:
+                        narration = scene.get("narration", "")
+                        title = scene.get("title", "Escena")
+                        options_text = scene.get("options_text", [])
+                        options_list = ""
+                        if options_text:
+                            options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
+                        return f"🎭 *{title}*\n\n{narration}{options_list}"
+            except Exception as e:
+                logger.error(f"[StoryDirector] Error al recargar aventura en render_current_scene: {e}")
+        
+        # Fallback: usar get_current_scene()
         scene_data = self.get_current_scene()
         if not scene_data.get("found"):
             return f"🎭 *Escena actual*\n\n{scene_data.get('message', 'No hay escena activa.')}"
