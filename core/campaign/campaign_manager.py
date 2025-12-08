@@ -289,5 +289,17 @@ class CampaignManager:
         """
         Exporta el estado como diccionario.
         Útil para guardar desde StoryDirector.
+        Asegura que todos los campos, incluyendo adventure_data, se incluyan.
         """
-        return self.state.copy()
+        state_copy = self.state.copy()
+        # Asegurar que adventure_data y campos relacionados se incluyan
+        if "adventure_data" in self.state:
+            state_copy["adventure_data"] = self.state["adventure_data"]
+        if "current_scene_id" in self.state:
+            state_copy["current_scene_id"] = self.state["current_scene_id"]
+        if "adventure_scenes" in self.state:
+            state_copy["adventure_scenes"] = self.state["adventure_scenes"]
+        if "campaign_title" in self.state:
+            state_copy["campaign_title"] = self.state["campaign_title"]
+        self.logger.debug(f"[CampaignManager] to_dict() - adventure_data presente: {'adventure_data' in state_copy}, current_scene_id: {state_copy.get('current_scene_id')}")
+        return state_copy
