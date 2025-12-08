@@ -348,12 +348,18 @@ class StoryDirector:
         # Guardar estado en CampaignManager (que persiste en JSON)
         # IMPORTANTE: Guardar adventure_data completo
         self.campaign_manager._save_state()
-        logger.debug(f"[StoryDirector] Estado guardado. adventure_data presente: {'adventure_data' in self.campaign_manager.state}")
-        logger.debug(f"[StoryDirector] current_scene_id: {self.campaign_manager.state.get('current_scene_id')}")
         
-        # También guardar en StoryDirector
+        # Verificar que adventure_data se guardó correctamente
+        adventure_data_saved = 'adventure_data' in self.campaign_manager.state
+        current_scene_id_saved = self.campaign_manager.state.get('current_scene_id')
+        logger.info(f"[StoryDirector] Estado guardado en CampaignManager. adventure_data: {adventure_data_saved}, current_scene_id: {current_scene_id_saved}")
+        
+        # También guardar en StoryDirector (que usa campaign_manager.to_dict())
         self._save_state()
+        
+        # Verificar que se guardó en ambos lugares
         logger.info(f"[StoryDirector] Campaña '{slug}' cargada: {info['title']} ({info['total_scenes']} escenas)")
+        logger.info(f"[StoryDirector] Verificación: adventure_data en state: {'adventure_data' in self.campaign_manager.state}, current_scene_id: {self.campaign_manager.state.get('current_scene_id')}")
 
     def decide_next_scene_type(self) -> str:
         """
