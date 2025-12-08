@@ -168,13 +168,44 @@ class StoryDirector:
         # Fallback: escena del campaign manager
         # Pero primero verificar si hay una escena guardada en el estado
         current_scene_name = self.campaign_manager.state.get("current_scene", "")
-        if current_scene_name and current_scene_name != "Escena no definida":
+        
+        # Si current_scene_name es "progress_scene.json" o similar, es un error
+        if current_scene_name and current_scene_name.endswith(".json"):
+            logger.warning(f"[StoryDirector] current_scene tiene un nombre de archivo JSON: {current_scene_name}. Esto es un error.")
+            # Intentar recargar la aventura si hay campaign_name
+            if campaign_name and campaign_name != "TheGeniesWishes":
+                try:
+                    logger.info(f"[StoryDirector] Intentando recargar aventura '{campaign_name}' para corregir current_scene")
+                    self.load_campaign(campaign_name)
+                    # Intentar de nuevo después de recargar
+                    adventure_data = self.campaign_manager.state.get("adventure_data")
+                    current_scene_id = self.campaign_manager.state.get("current_scene_id")
+                    if adventure_data and current_scene_id:
+                        from core.adventure.adventure_loader import AdventureLoader
+                        loader = AdventureLoader()
+                        scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+                        if scene:
+                            logger.info(f"[StoryDirector] Recargada aventura y encontrada escena: {scene.get('title', 'Unknown')}")
+                            return {
+                                "found": True,
+                                "scene": scene,
+                                "narrated": "",
+                                "from_adventure": True,
+                            }
+                except Exception as e:
+                    logger.error(f"[StoryDirector] Error al recargar aventura: {e}")
+        
+        if current_scene_name and current_scene_name != "Escena no definida" and not current_scene_name.endswith(".json"):
             # Intentar construir una escena básica desde el nombre
             scene = {
                 "title": current_scene_name,
                 "description": f"Escena: {current_scene_name}",
             }
             narrated = self.auto_narrator.narrate_scene(scene)
+            # Verificar que narrated no contenga "progress_scene.json"
+            if "progress_scene.json" in narrated:
+                logger.warning(f"[StoryDirector] auto_narrator devolvió 'progress_scene.json', usando título directo")
+                narrated = f"📜 *{current_scene_name}*\n\n{current_scene_name}"
             return {
                 "found": True,
                 "scene": scene,
@@ -191,6 +222,11 @@ class StoryDirector:
             }
         # Podríamos pasarla por el auto narrador
         narrated = self.auto_narrator.narrate_scene(scene)
+        # Verificar que narrated no contenga "progress_scene.json"
+        if "progress_scene.json" in narrated:
+            logger.warning(f"[StoryDirector] auto_narrator devolvió 'progress_scene.json' en fallback, usando título de escena")
+            scene_title = scene.get("title", "Escena")
+            narrated = f"📜 *{scene_title}*\n\n{scene.get('description', scene_title)}"
         return {
             "found": True,
             "scene": scene,
