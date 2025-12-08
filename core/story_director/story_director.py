@@ -123,19 +123,24 @@ class StoryDirector:
         adventure_data = self.campaign_manager.state.get("adventure_data")
         current_scene_id = self.campaign_manager.state.get("current_scene_id")
         
+        logger.debug(f"[StoryDirector] get_current_scene - adventure_data exists: {adventure_data is not None}, current_scene_id: {current_scene_id}")
+        
         if adventure_data and current_scene_id:
             # Buscar la escena en la aventura
             from core.adventure.adventure_loader import AdventureLoader
             loader = AdventureLoader()
             scene = loader.find_scene_by_id(adventure_data, current_scene_id)
             if scene:
-                narrated = self.auto_narrator.narrate_scene(scene)
+                logger.debug(f"[StoryDirector] Found adventure scene: {scene.get('title', 'Unknown')}")
+                # NO pasar por auto_narrator para escenas de aventura - usar narración directa
                 return {
                     "found": True,
                     "scene": scene,
-                    "narrated": narrated,
+                    "narrated": "",  # No usar auto_narrator para aventuras
                     "from_adventure": True,
                 }
+            else:
+                logger.warning(f"[StoryDirector] Scene ID '{current_scene_id}' not found in adventure data")
         
         # Fallback: escena del campaign manager
         scene = self.campaign_manager.get_active_scene()

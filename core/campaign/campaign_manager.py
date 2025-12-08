@@ -58,27 +58,31 @@ class CampaignManager:
                         self.state["current_scene"] = loaded_state.get("active_scene", "Oasis perdido")
                         self.logger.info("[CampaignManager] Migrated old campaign state format")
                     
-                    # Preserve players if they exist
+                    # Preserve ALL other keys from loaded state (including adventure data)
+                    for key, value in loaded_state.items():
+                        if key not in ["campaign_id", "campaign_title", "current_chapter", "active_scene"]:
+                            # Preserve all other keys, including adventure_data, current_scene_id, etc.
+                            self.state[key] = value
+                    
+                    # Explicitly preserve these critical keys if they exist
                     if "players" in loaded_state and isinstance(loaded_state["players"], dict):
                         self.state["players"] = loaded_state["players"]
                     
-                    # Preserve active_party if it exists
                     if "active_party" in loaded_state:
                         self.state["active_party"] = loaded_state["active_party"]
                     
-                    # Preserve party_chats if it exists
                     if "party_chats" in loaded_state:
                         self.state["party_chats"] = loaded_state["party_chats"]
                     
-                    # Preserve adventure data if it exists
                     if "adventure_data" in loaded_state:
                         self.state["adventure_data"] = loaded_state["adventure_data"]
                     
-                    # Preserve adventure scene tracking
                     if "current_scene_id" in loaded_state:
                         self.state["current_scene_id"] = loaded_state["current_scene_id"]
+                    
                     if "adventure_scenes" in loaded_state:
                         self.state["adventure_scenes"] = loaded_state["adventure_scenes"]
+                    
                     if "campaign_title" in loaded_state:
                         self.state["campaign_title"] = loaded_state["campaign_title"]
                     
