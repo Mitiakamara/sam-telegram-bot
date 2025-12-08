@@ -300,16 +300,34 @@ class StoryDirector:
         # Escena generada (fallback)
         narrated = scene_data.get("narrated", "")
         if narrated and narrated.strip():
-            # Si la narración contiene "progress_scene.json", es un error
+            # Si la narración contiene "progress_scene.json", es un error - usar título de escena
             if "progress_scene.json" in narrated:
                 logger.warning(f"[StoryDirector] render_current_scene recibió 'progress_scene.json' en narrated, usando título de escena")
                 title = scene.get("title", "Escena")
+                # Si el título también es "progress_scene.json", usar current_scene del estado
+                if title == "progress_scene.json" or title.endswith(".json"):
+                    current_scene_name = self.campaign_manager.state.get("current_scene", "Escena actual")
+                    if current_scene_name and not current_scene_name.endswith(".json"):
+                        title = current_scene_name
+                    else:
+                        title = "Escena actual"
                 desc = scene.get("description", scene.get("description_adapted", ""))
+                if not desc or desc == "progress_scene.json" or desc.endswith(".json"):
+                    desc = title
                 return f"🎭 *{title}*\n\n{desc}" if desc else f"🎭 *{title}*"
             return narrated
         
         title = scene.get("title", "Escena")
+        # Si el título es "progress_scene.json", usar current_scene del estado
+        if title == "progress_scene.json" or title.endswith(".json"):
+            current_scene_name = self.campaign_manager.state.get("current_scene", "Escena actual")
+            if current_scene_name and not current_scene_name.endswith(".json"):
+                title = current_scene_name
+            else:
+                title = "Escena actual"
         desc = scene.get("description", scene.get("description_adapted", ""))
+        if not desc or desc == "progress_scene.json" or desc.endswith(".json"):
+            desc = title
         return f"🎭 *{title}*\n\n{desc}" if desc else f"🎭 *{title}*"
 
     def trigger_event(self, event_type: str) -> str:
