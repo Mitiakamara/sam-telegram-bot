@@ -7,9 +7,12 @@
 #   /loadcampaign <slug> – cambia de campaña
 # ================================================================
 
+import logging
 from telegram.ext import CommandHandler
 from telegram import Update
 from telegram.ext import ContextTypes
+
+logger = logging.getLogger(__name__)
 
 async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sd = context.bot_data.get("story_director")
@@ -23,15 +26,46 @@ async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def loadcampaign(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sd = context.bot_data.get("story_director")
+    if not sd:
+        await update.message.reply_text("⚠️ StoryDirector no disponible.")
+        return
+    
     if not context.args:
-        await update.message.reply_text("Usa: `/loadcampaign <slug>`", parse_mode="Markdown")
+        # Listar aventuras disponibles
+        from core.adventure.adventure_loader import AdventureLoader
+        loader = AdventureLoader()
+        available = loader.list_available_adventures()
+        if available:
+            await update.message.reply_text(
+                f"📚 Aventuras disponibles:\n" + "\n".join(f"• {a}" for a in available) +
+                f"\n\nUsa: `/loadcampaign <nombre>`",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(
+                "⚠️ No hay aventuras disponibles.\n"
+                "Coloca archivos JSON en la carpeta `adventures/`",
+                parse_mode="Markdown"
+            )
         return
 
     slug = context.args[0]
     try:
         sd.load_campaign(slug)
-        await update.message.reply_text(f"📦 Campaña cargada: *{slug}*", parse_mode="Markdown")
+        adventure_title = sd.campaign_manager.state.get("campaign_title", slug)
+        total_scenes = len(sd.campaign_manager.state.get("adventure_scenes", []))
+        await update.message.reply_text(
+            f"📦 *Campaña cargada*\n\n"
+            f"🎭 {adventure_title}\n"
+            f"📊 {total_scenes} escenas disponibles\n"
+            f"📍 Escena inicial: {sd.campaign_manager.get_current_scene()}\n\n"
+            f"Usa `/scene` para comenzar la aventura.",
+            parse_mode="Markdown"
+        )
+    except ValueError as e:
+        await update.message.reply_text(f"⚠️ {str(e)}")
     except Exception as e:
+        logger.exception(f"Error cargando campaña: {e}")
         await update.message.reply_text(f"⚠️ Error al cargar campaña: {e}")
 
 def register_campaign_handlers(app):

@@ -116,6 +116,28 @@ class StoryDirector:
     # Narrativa / campaña
     # ------------------------------------------------------------------
     def get_current_scene(self) -> Dict[str, Any]:
+        """
+        Obtiene la escena actual, ya sea de una aventura cargada o generada.
+        """
+        # Primero verificar si hay una aventura cargada
+        adventure_data = self.campaign_manager.state.get("adventure_data")
+        current_scene_id = self.campaign_manager.state.get("current_scene_id")
+        
+        if adventure_data and current_scene_id:
+            # Buscar la escena en la aventura
+            from core.adventure.adventure_loader import AdventureLoader
+            loader = AdventureLoader()
+            scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+            if scene:
+                narrated = self.auto_narrator.narrate_scene(scene)
+                return {
+                    "found": True,
+                    "scene": scene,
+                    "narrated": narrated,
+                    "from_adventure": True,
+                }
+        
+        # Fallback: escena del campaign manager
         scene = self.campaign_manager.get_active_scene()
         if not scene:
             return {
@@ -128,6 +150,7 @@ class StoryDirector:
             "found": True,
             "scene": scene,
             "narrated": narrated,
+            "from_adventure": False,
         }
 
     def get_campaign_progress(self) -> Dict[str, Any]:
@@ -157,11 +180,26 @@ class StoryDirector:
         if not scene_data.get("found"):
             return f"🎭 *Escena actual*\n\n{scene_data.get('message', 'No hay escena activa.')}"
         
+        scene = scene_data.get("scene", {})
+        
+        # Si es de una aventura, usar la narración de la aventura
+        if scene_data.get("from_adventure"):
+            narration = scene.get("narration", "")
+            title = scene.get("title", "Escena")
+            
+            # Mostrar opciones si existen
+            options_text = scene.get("options_text", [])
+            options_list = ""
+            if options_text:
+                options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
+            
+            return f"🎭 *{title}*\n\n{narration}{options_list}"
+        
+        # Escena generada (fallback)
         narrated = scene_data.get("narrated", "")
         if narrated:
             return narrated
         
-        scene = scene_data.get("scene", {})
         title = scene.get("title", "Escena")
         desc = scene.get("description", scene.get("description_adapted", ""))
         return f"🎭 *{title}*\n\n{desc}"
@@ -218,16 +256,43 @@ class StoryDirector:
 
     def load_campaign(self, slug: str) -> None:
         """
-        Carga una campaña por su slug.
-        Por ahora solo soporta campañas predefinidas.
+        Carga una campaña por su slug desde archivos JSON en adventures/.
+        Inicializa el estado del juego con las escenas y datos de la aventura.
         """
-        # Por ahora, solo actualizamos el nombre
-        # En el futuro, esto podría cargar desde un archivo JSON
+        from core.adventure.adventure_loader import AdventureLoader
+        
+        loader = AdventureLoader()
+        adventure_data = loader.load_adventure(slug)
+        
+        if not adventure_data:
+            raise ValueError(f"Aventura '{slug}' no encontrada. Aventuras disponibles: {', '.join(loader.list_available_adventures())}")
+        
+        # Validar estructura
+        is_valid, error = loader.validate_adventure(adventure_data)
+        if not is_valid:
+            raise ValueError(f"Aventura '{slug}' inválida: {error}")
+        
+        # Obtener información de la aventura
+        info = loader.get_adventure_info(adventure_data)
+        
+        # Actualizar estado de campaña
         self.campaign_manager.state["campaign_name"] = slug
+        self.campaign_manager.state["campaign_title"] = info["title"]
         self.campaign_manager.state["chapter"] = 1
-        self.campaign_manager.state["current_scene"] = "Inicio"
+        self.campaign_manager.state["adventure_data"] = adventure_data  # Guardar datos completos
+        
+        # Obtener escena inicial
+        initial_scene = loader.get_initial_scene(adventure_data)
+        if initial_scene:
+            scene_title = initial_scene.get("title", "Inicio")
+            self.campaign_manager.state["current_scene"] = scene_title
+            self.campaign_manager.state["current_scene_id"] = initial_scene.get("scene_id")
+            self.campaign_manager.state["adventure_scenes"] = adventure_data.get("scenes", [])
+        else:
+            self.campaign_manager.state["current_scene"] = "Inicio"
+        
         self._save_state()
-        logger.info(f"[StoryDirector] Campaña '{slug}' cargada.")
+        logger.info(f"[StoryDirector] Campaña '{slug}' cargada: {info['title']} ({info['total_scenes']} escenas)")
 
     def decide_next_scene_type(self) -> str:
         """
