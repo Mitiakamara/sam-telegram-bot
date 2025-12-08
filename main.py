@@ -10,8 +10,11 @@ from core.campaign.campaign_manager import CampaignManager
 from core.handlers.player_handler import register_player_handlers
 from core.handlers.narrative_handler import register_narrative_handlers
 from core.handlers.campaign_handler import register_campaign_handlers
+from core.handlers.conversation_handler import register_conversation_handler
 # importa StoryDirector
 from core.story_director.story_director import StoryDirector
+# importa GameService
+from core.services.game_service import GameService
 
 # ---------------------------------------------------------------------
 # LOGGING
@@ -37,13 +40,18 @@ def main() -> None:
     # instancia única del StoryDirector (orquesta narrativa, escenas, eventos)
     story_director = StoryDirector()
     
+    # instancia única del GameService (conecta con sam-gameapi)
+    game_service = GameService()
+    
     logger.info("🤖 Iniciando SAM The Dungeon Bot...")
 
     # construimos la aplicación de telegram
     application = ApplicationBuilder().token(bot_token).build()
     
-    # Guardamos StoryDirector en bot_data para que los handlers puedan accederlo
+    # Guardamos servicios en bot_data para que los handlers puedan accederlos
     application.bot_data["story_director"] = story_director
+    application.bot_data["game_service"] = game_service
+    application.bot_data["campaign_manager"] = campaign_manager
 
     # registramos TODOS los comandos de jugador
     register_player_handlers(application, campaign_manager)
@@ -53,6 +61,10 @@ def main() -> None:
     
     # registramos handlers de campaña (/progress, /restart, /loadcampaign)
     register_campaign_handlers(application)
+    
+    # registramos handler conversacional (procesa mensajes libres)
+    # IMPORTANTE: Este debe ir DESPUÉS de los command handlers
+    register_conversation_handler(application, game_service, campaign_manager)
 
     # handler de errores para que no se pierdan en logs
     async def error_handler(update, context) -> None:
@@ -63,7 +75,8 @@ def main() -> None:
     application.add_error_handler(error_handler)
 
     logger.info("🤖 SAM The Dungeon Bot iniciado correctamente.")
-    logger.info("Esperando comandos en Telegram...")
+    logger.info("✅ Modo conversacional activado - Los jugadores pueden usar lenguaje natural.")
+    logger.info("Esperando comandos y mensajes en Telegram...")
 
     # IMPORTANTE: usa polling directo, sin asyncio.run, como ya viste que Render acepta
     # drop_pending_updates=True evita que se procesen updates viejos al reiniciar

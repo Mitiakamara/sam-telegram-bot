@@ -28,16 +28,32 @@ def register_player_handlers(application, campaign_manager):
     # /start
     # ------------------------------------------------------------
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # Initialize game if not already started
+        game_service = context.bot_data.get("game_service")
+        if game_service:
+            # Check if game is already started, if not, start it
+            state = await game_service.get_game_state()
+            if not state.get("success"):
+                # Game not started, initialize it
+                await game_service.start_game()
+        
         await update.message.reply_text(
             "🧙‍♂️ Bienvenido a SAM The Dungeon Bot\n"
-            "DM automático para campañas SRD 5.1.2.\n\n"
-            "Comandos principales:\n"
+            "DM automático para campañas SRD 5.2.1.\n\n"
+            "📋 Comandos principales:\n"
             "• /createcharacter – crear tu personaje\n"
             "• /join – unirte a la campaña\n"
-            "• /scene – mostrar o continuar la escena\n"
             "• /status – ver tu estado actual\n"
-            "• /progress – ver progreso de la campaña\n\n"
-            "Versión estable: 7.9 – Integración narrativa funcional"
+            "• /progress – ver progreso de la campaña\n"
+            "• /scene – mostrar escena actual\n"
+            "• /event <tipo> – ejecutar evento narrativo\n\n"
+            "💬 Modo conversacional:\n"
+            "Puedes usar lenguaje natural para interactuar:\n"
+            "• \"Exploro la habitación\"\n"
+            "• \"Ataco al goblin con mi espada\"\n"
+            "• \"Lanzo bola de fuego a los orcos\"\n"
+            "• \"Hablo con el mercader\"\n\n"
+            "Versión: 7.10 – Modo conversacional activo 🎮"
         )
 
     # ------------------------------------------------------------
@@ -51,9 +67,27 @@ def register_player_handlers(application, campaign_manager):
                 "⚠️ No tienes un personaje creado.\nUsa /createcharacter antes de unirte a la aventura."
             )
             return
-        await update.message.reply_text(f"🎲 {player['name']} se ha unido a la campaña.")
+        
+        player_name = player['name']
+        
+        # Add to local campaign
         campaign_manager.add_to_active_party(user_id)
-        logger.info(f"[PlayerHandler] Jugador {player['name']} se unió a la campaña.")
+        
+        # Also join GameAPI party
+        game_service = context.bot_data.get("game_service")
+        if game_service:
+            result = await game_service.join_party(player_name)
+            if not result.get("success"):
+                error = result.get("error", "Error desconocido")
+                if "Ya estás en el grupo" not in error:
+                    await update.message.reply_text(f"⚠️ {error}")
+        
+        await update.message.reply_text(
+            f"🎲 *{player_name}* se ha unido a la campaña.\n"
+            f"Ahora puedes interactuar con el mundo usando lenguaje natural.\n"
+            f"Ejemplo: \"Exploro la habitación\" o \"Ataco al goblin con mi espada\""
+        )
+        logger.info(f"[PlayerHandler] Jugador {player_name} se unió a la campaña.")
 
     # ------------------------------------------------------------
     # /status
