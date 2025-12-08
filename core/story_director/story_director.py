@@ -290,14 +290,21 @@ class StoryDirector:
         initial_scene = loader.get_initial_scene(adventure_data)
         if initial_scene:
             scene_title = initial_scene.get("title", "Inicio")
+            scene_id = initial_scene.get("scene_id")
             self.campaign_manager.state["current_scene"] = scene_title
-            self.campaign_manager.state["current_scene_id"] = initial_scene.get("scene_id")
+            self.campaign_manager.state["current_scene_id"] = scene_id
             self.campaign_manager.state["adventure_scenes"] = adventure_data.get("scenes", [])
+            logger.info(f"[StoryDirector] Escena inicial configurada: {scene_title} (ID: {scene_id})")
         else:
             self.campaign_manager.state["current_scene"] = "Inicio"
+            logger.warning(f"[StoryDirector] No se encontró escena inicial en la aventura")
         
         # Guardar estado en CampaignManager (que persiste en JSON)
+        # IMPORTANTE: Guardar adventure_data completo
         self.campaign_manager._save_state()
+        logger.debug(f"[StoryDirector] Estado guardado. adventure_data presente: {'adventure_data' in self.campaign_manager.state}")
+        logger.debug(f"[StoryDirector] current_scene_id: {self.campaign_manager.state.get('current_scene_id')}")
+        
         # También guardar en StoryDirector
         self._save_state()
         logger.info(f"[StoryDirector] Campaña '{slug}' cargada: {info['title']} ({info['total_scenes']} escenas)")
