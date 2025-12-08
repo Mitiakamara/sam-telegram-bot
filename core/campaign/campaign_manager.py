@@ -86,6 +86,18 @@ class CampaignManager:
                     if "campaign_title" in loaded_state:
                         self.state["campaign_title"] = loaded_state["campaign_title"]
                     
+                    # Logging para verificar que adventure_data se cargó
+                    loaded_adventure_data = self.state.get("adventure_data")
+                    loaded_scene_id = self.state.get("current_scene_id")
+                    self.logger.info(f"[CampaignManager] Estado cargado. adventure_data presente: {loaded_adventure_data is not None}, current_scene_id: {loaded_scene_id}")
+                    if loaded_adventure_data:
+                        # Verificar estructura
+                        if isinstance(loaded_adventure_data, dict) and "scenes" in loaded_adventure_data:
+                            scene_count = len(loaded_adventure_data.get("scenes", []))
+                            self.logger.info(f"[CampaignManager] adventure_data tiene estructura válida con {scene_count} escenas")
+                        else:
+                            self.logger.warning(f"[CampaignManager] adventure_data no tiene estructura válida. Tipo: {type(loaded_adventure_data)}, keys: {list(loaded_adventure_data.keys()) if isinstance(loaded_adventure_data, dict) else 'N/A'}")
+                    
             except Exception as e:
                 self.logger.warning("[CampaignManager] No pude leer el JSON, uso estado por defecto: %s", e)
         else:
@@ -98,11 +110,54 @@ class CampaignManager:
         self.state.setdefault("current_scene", "Oasis perdido")
         self.state.setdefault("active_party", [])
         self.state.setdefault("party_chats", {})
+        
+        # CORRECCIÓN CRÍTICA: Si current_scene es un nombre de archivo JSON, corregirlo
+        current_scene = self.state.get("current_scene", "")
+        if current_scene and current_scene.endswith(".json"):
+            self.logger.warning(f"[CampaignManager] current_scene tiene nombre de archivo JSON: '{current_scene}'. Corrigiendo...")
+            # Si hay adventure_data, usar el título de la escena actual
+            adventure_data = self.state.get("adventure_data")
+            current_scene_id = self.state.get("current_scene_id")
+            if adventure_data and current_scene_id:
+                try:
+                    from core.adventure.adventure_loader import AdventureLoader
+                    loader = AdventureLoader()
+                    scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+                    if scene:
+                        self.state["current_scene"] = scene.get("title", "Escena actual")
+                        self.logger.info(f"[CampaignManager] current_scene corregido a: {self.state['current_scene']}")
+                    else:
+                        self.state["current_scene"] = "Escena actual"
+                        self.logger.warning(f"[CampaignManager] No se encontró escena con ID '{current_scene_id}', usando 'Escena actual'")
+                except Exception as e:
+                    self.logger.error(f"[CampaignManager] Error al corregir current_scene: {e}")
+                    self.state["current_scene"] = "Escena actual"
+            else:
+                # Fallback: usar un nombre genérico
+                self.state["current_scene"] = "Escena actual"
+                self.logger.info(f"[CampaignManager] current_scene corregido a: Escena actual (no hay adventure_data)")
+            # Guardar el estado corregido
+            self._save_state()
 
     def _save_state(self) -> None:
         try:
+            # Verificar que adventure_data está presente antes de guardar
+            has_adventure_data = "adventure_data" in self.state and self.state.get("adventure_data") is not None
+            current_scene_id = self.state.get("current_scene_id")
+            self.logger.debug(f"[CampaignManager] _save_state - adventure_data presente: {has_adventure_data}, current_scene_id: {current_scene_id}")
+            
             with open(self.state_path, "w", encoding="utf-8") as f:
                 json.dump(self.state, f, ensure_ascii=False, indent=2)
+            
+            # Verificar que se guardó correctamente leyendo el archivo
+            if has_adventure_data:
+                try:
+                    with open(self.state_path, "r", encoding="utf-8") as f:
+                        saved_data = json.load(f)
+                        saved_has_adventure = "adventure_data" in saved_data and saved_data.get("adventure_data") is not None
+                        self.logger.info(f"[CampaignManager] Estado guardado. adventure_data en archivo: {saved_has_adventure}, current_scene_id guardado: {saved_data.get('current_scene_id')}")
+                except Exception as e:
+                    self.logger.warning(f"[CampaignManager] No se pudo verificar el archivo guardado: {e}")
         except Exception as e:
             self.logger.error("[CampaignManager] Error guardando estado: %s", e)
 

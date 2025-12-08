@@ -27,14 +27,38 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
     adventure_data = campaign_manager.state.get("adventure_data")
     current_scene_id = campaign_manager.state.get("current_scene_id")
     campaign_name = campaign_manager.state.get("campaign_name", "")
+    current_scene = campaign_manager.state.get("current_scene", "")
     
-    logger.info(f"[NarrativeHandler] Direct check - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}, campaign_name: {campaign_name}")
+    logger.info(f"[NarrativeHandler] Direct check - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}, campaign_name: {campaign_name}, current_scene: {current_scene}")
+    
+    # Si adventure_data es None pero hay campaign_name, intentar recargar INMEDIATAMENTE
+    if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes":
+        logger.warning(f"[NarrativeHandler] adventure_data es None pero campaign_name='{campaign_name}'. Recargando aventura...")
+        try:
+            sd.load_campaign(campaign_name)
+            # Actualizar variables después de recargar
+            adventure_data = campaign_manager.state.get("adventure_data")
+            current_scene_id = campaign_manager.state.get("current_scene_id")
+            logger.info(f"[NarrativeHandler] Después de recargar - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}")
+        except Exception as e:
+            logger.error(f"[NarrativeHandler] Error al recargar aventura: {e}")
     
     # Si hay adventure_data, mostrar la escena directamente
     if adventure_data and current_scene_id:
         try:
             from core.adventure.adventure_loader import AdventureLoader
             loader = AdventureLoader()
+            
+            # Verificar que adventure_data tiene la estructura correcta
+            if not isinstance(adventure_data, dict) or "scenes" not in adventure_data:
+                logger.warning(f"[NarrativeHandler] adventure_data no tiene estructura válida. Tipo: {type(adventure_data)}, keys: {list(adventure_data.keys()) if isinstance(adventure_data, dict) else 'N/A'}")
+                # Intentar recargar
+                if campaign_name and campaign_name != "TheGeniesWishes":
+                    logger.info(f"[NarrativeHandler] Recargando aventura '{campaign_name}' debido a estructura inválida")
+                    sd.load_campaign(campaign_name)
+                    adventure_data = campaign_manager.state.get("adventure_data")
+                    current_scene_id = campaign_manager.state.get("current_scene_id")
+            
             scene = loader.find_scene_by_id(adventure_data, current_scene_id)
             if scene:
                 narration = scene.get("narration", "")
@@ -44,11 +68,13 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if options_text:
                     options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
                 result = f"🎭 *{title}*\n\n{narration}{options_list}"
-                logger.info(f"[NarrativeHandler] Found adventure scene directly: {title}")
+                logger.info(f"[NarrativeHandler] Found adventure scene directly: {title} (ID: {current_scene_id})")
                 await update.message.reply_text(result, parse_mode="Markdown")
                 return
+            else:
+                logger.warning(f"[NarrativeHandler] No se encontró escena con ID '{current_scene_id}' en adventure_data. Escenas disponibles: {[s.get('scene_id') for s in adventure_data.get('scenes', [])]}")
         except Exception as e:
-            logger.error(f"[NarrativeHandler] Error showing adventure scene directly: {e}")
+            logger.error(f"[NarrativeHandler] Error showing adventure scene directly: {e}", exc_info=True)
     
     # Si no hay adventure_data pero hay campaign_name, intentar recargar
     if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes":
