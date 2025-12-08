@@ -291,6 +291,9 @@ class StoryDirector:
         else:
             self.campaign_manager.state["current_scene"] = "Inicio"
         
+        # Guardar estado en CampaignManager (que persiste en JSON)
+        self.campaign_manager._save_state()
+        # También guardar en StoryDirector
         self._save_state()
         logger.info(f"[StoryDirector] Campaña '{slug}' cargada: {info['title']} ({info['total_scenes']} escenas)")
 

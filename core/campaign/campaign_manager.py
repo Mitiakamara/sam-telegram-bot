@@ -70,6 +70,18 @@ class CampaignManager:
                     if "party_chats" in loaded_state:
                         self.state["party_chats"] = loaded_state["party_chats"]
                     
+                    # Preserve adventure data if it exists
+                    if "adventure_data" in loaded_state:
+                        self.state["adventure_data"] = loaded_state["adventure_data"]
+                    
+                    # Preserve adventure scene tracking
+                    if "current_scene_id" in loaded_state:
+                        self.state["current_scene_id"] = loaded_state["current_scene_id"]
+                    if "adventure_scenes" in loaded_state:
+                        self.state["adventure_scenes"] = loaded_state["adventure_scenes"]
+                    if "campaign_title" in loaded_state:
+                        self.state["campaign_title"] = loaded_state["campaign_title"]
+                    
             except Exception as e:
                 self.logger.warning("[CampaignManager] No pude leer el JSON, uso estado por defecto: %s", e)
         else:
