@@ -1,9 +1,10 @@
 import httpx
+import os
 from uuid import uuid4
 from aiocache import cached
 from core.models.srd import SrdQuery, SrdResponse, SrdHit
 
-SRD_SERVICE_URL = "https://sam-srdservice.onrender.com"
+SRD_SERVICE_URL = os.getenv("SRD_SERVICE_URL", "https://sam-srdservice.onrender.com").strip("/")
 
 
 @cached(ttl=3600)

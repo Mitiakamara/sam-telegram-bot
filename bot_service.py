@@ -5,6 +5,11 @@ from dotenv import load_dotenv
 # ================================================================
 # ⚙️ Configuración base
 # ================================================================
+# NOTE: This module contains HTTP client functions for sam-gameapi.
+# Currently not actively used, but kept for future integration.
+# The GameService class in core/services/game_service.py provides
+# similar functionality and may be the preferred approach.
+# ================================================================
 
 load_dotenv()
 

@@ -88,7 +88,9 @@ def register_createcharacter_conversation(application, campaign_manager):
             return ConversationHandler.END
 
         character = builder.finalize_character(data)
+        user_id = update.effective_user.id
         campaign_manager.add_player(
+            telegram_id=user_id,
             player_name=character["name"],
             player_data=character,
         )

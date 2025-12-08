@@ -8,6 +8,10 @@ from telegram.ext import ApplicationBuilder
 from core.campaign.campaign_manager import CampaignManager
 # importa el registro de handlers actualizado
 from core.handlers.player_handler import register_player_handlers
+from core.handlers.narrative_handler import register_narrative_handlers
+from core.handlers.campaign_handler import register_campaign_handlers
+# importa StoryDirector
+from core.story_director.story_director import StoryDirector
 
 # ---------------------------------------------------------------------
 # LOGGING
@@ -29,13 +33,26 @@ def main() -> None:
 
     # instancia única del estado de campaña
     campaign_manager = CampaignManager()
+    
+    # instancia única del StoryDirector (orquesta narrativa, escenas, eventos)
+    story_director = StoryDirector()
+    
     logger.info("🤖 Iniciando SAM The Dungeon Bot...")
 
     # construimos la aplicación de telegram
     application = ApplicationBuilder().token(bot_token).build()
+    
+    # Guardamos StoryDirector en bot_data para que los handlers puedan accederlo
+    application.bot_data["story_director"] = story_director
 
     # registramos TODOS los comandos de jugador
     register_player_handlers(application, campaign_manager)
+    
+    # registramos handlers narrativos (/scene, /event)
+    register_narrative_handlers(application)
+    
+    # registramos handlers de campaña (/progress, /restart, /loadcampaign)
+    register_campaign_handlers(application)
 
     # handler de errores para que no se pierdan en logs
     async def error_handler(update, context) -> None:

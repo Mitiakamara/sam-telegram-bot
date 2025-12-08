@@ -153,3 +153,50 @@ class CampaignManager:
             "current_scene": self.get_current_scene(),
             "players": self.get_players(),
         }
+
+    def add_to_active_party(self, telegram_id: int) -> None:
+        """
+        Añade un jugador a la party activa de la campaña.
+        """
+        if "active_party" not in self.state:
+            self.state["active_party"] = []
+        if telegram_id not in self.state["active_party"]:
+            self.state["active_party"].append(telegram_id)
+            self._save_state()
+            self.logger.info(f"[CampaignManager] Jugador {telegram_id} añadido a la party activa.")
+
+    def get_active_party(self) -> list:
+        """Retorna la lista de IDs de telegram de la party activa."""
+        return self.state.get("active_party", [])
+
+    def get_active_scene(self) -> Optional[Dict[str, Any]]:
+        """
+        Retorna la escena activa como diccionario.
+        Si no hay escena activa, retorna None.
+        """
+        scene_name = self.get_current_scene()
+        if not scene_name or scene_name == "Escena no definida":
+            return None
+        return {
+            "title": scene_name,
+            "description": scene_name,
+            "scene_type": "active",
+            "status": "active"
+        }
+
+    def load_from_dict(self, data: Dict[str, Any]) -> None:
+        """
+        Carga el estado desde un diccionario.
+        Útil para restaurar desde StoryDirector.
+        """
+        if data:
+            self.state.update(data)
+            self._save_state()
+            self.logger.info("[CampaignManager] Estado cargado desde diccionario.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Exporta el estado como diccionario.
+        Útil para guardar desde StoryDirector.
+        """
+        return self.state.copy()
