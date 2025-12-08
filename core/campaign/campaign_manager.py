@@ -154,16 +154,40 @@ class CampaignManager:
             "players": self.get_players(),
         }
 
-    def add_to_active_party(self, telegram_id: int) -> None:
+    def add_to_active_party(self, telegram_id: int, chat_id: int = None) -> None:
         """
         Añade un jugador a la party activa de la campaña.
+        
+        Args:
+            telegram_id: ID de Telegram del jugador
+            chat_id: ID del chat donde está el jugador (opcional, para multi-player)
         """
         if "active_party" not in self.state:
             self.state["active_party"] = []
+        if "party_chats" not in self.state:
+            self.state["party_chats"] = {}  # Maps telegram_id -> chat_id
+        
         if telegram_id not in self.state["active_party"]:
             self.state["active_party"].append(telegram_id)
+            if chat_id:
+                self.state["party_chats"][str(telegram_id)] = chat_id
             self._save_state()
-            self.logger.info(f"[CampaignManager] Jugador {telegram_id} añadido a la party activa.")
+            self.logger.info(f"[CampaignManager] Jugador {telegram_id} añadido a la party activa (chat: {chat_id}).")
+    
+    def get_party_chat_id(self, telegram_id: int) -> Optional[int]:
+        """
+        Obtiene el ID del chat donde está un jugador.
+        """
+        party_chats = self.state.get("party_chats", {})
+        chat_id = party_chats.get(str(telegram_id))
+        return chat_id if chat_id else None
+    
+    def get_all_party_chat_ids(self) -> list:
+        """
+        Obtiene todos los IDs de chat únicos donde hay jugadores de la party.
+        """
+        party_chats = self.state.get("party_chats", {})
+        return list(set(party_chats.values()))
 
     def get_active_party(self) -> list:
         """Retorna la lista de IDs de telegram de la party activa."""

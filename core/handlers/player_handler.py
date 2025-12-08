@@ -61,6 +61,7 @@ def register_player_handlers(application, campaign_manager):
     # ------------------------------------------------------------
     async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         player = campaign_manager.get_player_by_telegram_id(user_id)
         if not player:
             await update.message.reply_text(
@@ -70,8 +71,20 @@ def register_player_handlers(application, campaign_manager):
         
         player_name = player['name']
         
-        # Add to local campaign
-        campaign_manager.add_to_active_party(user_id)
+        # Get current party size
+        active_party = campaign_manager.get_active_party()
+        current_party_size = len(active_party)
+        
+        # Check party size limit (2-8 players)
+        if current_party_size >= 8:
+            await update.message.reply_text(
+                "⚠️ La party está completa (máximo 8 jugadores).\n"
+                "Espera a que alguien salga o inicia una nueva campaña."
+            )
+            return
+        
+        # Add to local campaign (with chat_id for multi-player)
+        campaign_manager.add_to_active_party(user_id, chat_id)
         
         # Also join GameAPI party
         game_service = context.bot_data.get("game_service")
@@ -82,12 +95,24 @@ def register_player_handlers(application, campaign_manager):
                 if "Ya estás en el grupo" not in error:
                     await update.message.reply_text(f"⚠️ {error}")
         
-        await update.message.reply_text(
+        # Get updated party size
+        new_party_size = len(campaign_manager.get_active_party())
+        
+        # Broadcast join message to all party members
+        join_message = (
             f"🎲 *{player_name}* se ha unido a la campaña.\n"
-            f"Ahora puedes interactuar con el mundo usando lenguaje natural.\n"
-            f"Ejemplo: \"Exploro la habitación\" o \"Ataco al goblin con mi espada\""
+            f"Party: {new_party_size}/8 jugadores\n\n"
+            f"💬 Ahora puedes interactuar usando lenguaje natural:\n"
+            f"• \"Exploro la habitación\"\n"
+            f"• \"Ataco al goblin con mi espada\"\n"
+            f"• \"Lanzo bola de fuego a los orcos\"\n"
+            f"• \"Hablo con el mercader\""
         )
-        logger.info(f"[PlayerHandler] Jugador {player_name} se unió a la campaña.")
+        
+        # Send to the chat (in group chats, all see it; in private, just the player)
+        await update.message.reply_text(join_message, parse_mode="Markdown")
+        
+        logger.info(f"[PlayerHandler] Jugador {player_name} se unió a la campaña (Party: {new_party_size}/8).")
 
     # ------------------------------------------------------------
     # /status
