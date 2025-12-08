@@ -21,8 +21,74 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Error: StoryDirector no disponible.")
         return
     
+    # Verificar directamente si hay adventure_data antes de llamar a render_current_scene
+    # Esto funciona incluso si el código desplegado es antiguo
+    campaign_manager = sd.campaign_manager
+    adventure_data = campaign_manager.state.get("adventure_data")
+    current_scene_id = campaign_manager.state.get("current_scene_id")
+    campaign_name = campaign_manager.state.get("campaign_name", "")
+    
+    logger.info(f"[NarrativeHandler] Direct check - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}, campaign_name: {campaign_name}")
+    
+    # Si hay adventure_data, mostrar la escena directamente
+    if adventure_data and current_scene_id:
+        try:
+            from core.adventure.adventure_loader import AdventureLoader
+            loader = AdventureLoader()
+            scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+            if scene:
+                narration = scene.get("narration", "")
+                title = scene.get("title", "Escena")
+                options_text = scene.get("options_text", [])
+                options_list = ""
+                if options_text:
+                    options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
+                result = f"🎭 *{title}*\n\n{narration}{options_list}"
+                logger.info(f"[NarrativeHandler] Found adventure scene directly: {title}")
+                await update.message.reply_text(result, parse_mode="Markdown")
+                return
+        except Exception as e:
+            logger.error(f"[NarrativeHandler] Error showing adventure scene directly: {e}")
+    
+    # Si no hay adventure_data pero hay campaign_name, intentar recargar
+    if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes":
+        logger.warning(f"[NarrativeHandler] adventure_data es None, recargando '{campaign_name}'")
+        try:
+            sd.load_campaign(campaign_name)
+            # Intentar de nuevo
+            adventure_data = campaign_manager.state.get("adventure_data")
+            current_scene_id = campaign_manager.state.get("current_scene_id")
+            if adventure_data and current_scene_id:
+                from core.adventure.adventure_loader import AdventureLoader
+                loader = AdventureLoader()
+                scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+                if scene:
+                    narration = scene.get("narration", "")
+                    title = scene.get("title", "Escena")
+                    options_text = scene.get("options_text", [])
+                    options_list = ""
+                    if options_text:
+                        options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
+                    result = f"🎭 *{title}*\n\n{narration}{options_list}"
+                    logger.info(f"[NarrativeHandler] Found adventure scene after reload: {title}")
+                    await update.message.reply_text(result, parse_mode="Markdown")
+                    return
+        except Exception as e:
+            logger.error(f"[NarrativeHandler] Error recargando aventura: {e}")
+    
+    # Fallback: usar render_current_scene()
     logger.info("[NarrativeHandler] Calling render_current_scene()")
     result = sd.render_current_scene()
+    
+    # Verificar que el resultado no sea "progress_scene.json"
+    if "progress_scene.json" in result:
+        logger.warning(f"[NarrativeHandler] render_current_scene devolvió 'progress_scene.json', usando current_scene del estado")
+        current_scene_name = campaign_manager.state.get("current_scene", "Escena actual")
+        if current_scene_name and not current_scene_name.endswith(".json"):
+            result = f"🎭 *{current_scene_name}*\n\n{current_scene_name}"
+        else:
+            result = "🎭 *Escena actual*\n\nNo hay escena activa en este momento."
+    
     logger.info(f"[NarrativeHandler] render_current_scene returned: {result[:100]}...")
     await update.message.reply_text(result, parse_mode="Markdown")
 
