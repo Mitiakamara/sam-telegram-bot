@@ -147,6 +147,18 @@ class StoryDirector:
         
         logger.info(f"[StoryDirector] get_current_scene - campaign_name: {campaign_name}, adventure_data exists: {adventure_data is not None}, current_scene_id: {current_scene_id}")
         
+        # Si adventure_data es None pero hay campaign_name, intentar recargar inmediatamente
+        if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes":
+            logger.warning(f"[StoryDirector] adventure_data es None pero campaign_name='{campaign_name}'. Recargando aventura...")
+            try:
+                self.load_campaign(campaign_name)
+                # Actualizar variables después de recargar
+                adventure_data = self.campaign_manager.state.get("adventure_data")
+                current_scene_id = self.campaign_manager.state.get("current_scene_id")
+                logger.info(f"[StoryDirector] Después de recargar - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}")
+            except Exception as e:
+                logger.error(f"[StoryDirector] Error al recargar aventura en get_current_scene: {e}")
+        
         if adventure_data and current_scene_id:
             # Buscar la escena en la aventura
             from core.adventure.adventure_loader import AdventureLoader
