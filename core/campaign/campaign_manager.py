@@ -34,20 +34,54 @@ class CampaignManager:
             os.makedirs(directory, exist_ok=True)
 
     def _load_state(self) -> None:
+        # Start with default structure
+        default_state = {
+            "campaign_name": "TheGeniesWishes",
+            "chapter": 1,
+            "current_scene": "Oasis perdido",
+            "players": {},
+            "active_party": [],
+            "party_chats": {}
+        }
+        self.state = default_state.copy()
+        
         if os.path.exists(self.state_path):
             try:
                 with open(self.state_path, "r", encoding="utf-8") as f:
-                    self.state = json.load(f)
+                    loaded_state = json.load(f)
+                    
+                    # Migrate old format to new format
+                    if "campaign_id" in loaded_state:
+                        # Old format - migrate
+                        self.state["campaign_name"] = loaded_state.get("campaign_title", loaded_state.get("campaign_id", "TheGeniesWishes"))
+                        self.state["chapter"] = loaded_state.get("current_chapter", 1)
+                        self.state["current_scene"] = loaded_state.get("active_scene", "Oasis perdido")
+                        self.logger.info("[CampaignManager] Migrated old campaign state format")
+                    
+                    # Preserve players if they exist
+                    if "players" in loaded_state and isinstance(loaded_state["players"], dict):
+                        self.state["players"] = loaded_state["players"]
+                    
+                    # Preserve active_party if it exists
+                    if "active_party" in loaded_state:
+                        self.state["active_party"] = loaded_state["active_party"]
+                    
+                    # Preserve party_chats if it exists
+                    if "party_chats" in loaded_state:
+                        self.state["party_chats"] = loaded_state["party_chats"]
+                    
             except Exception as e:
                 self.logger.warning("[CampaignManager] No pude leer el JSON, uso estado por defecto: %s", e)
         else:
             self._save_state()
 
-        # asegurar claves mínimas
+        # Ensure critical keys exist (safety check)
         self.state.setdefault("players", {})
         self.state.setdefault("campaign_name", "TheGeniesWishes")
         self.state.setdefault("chapter", 1)
         self.state.setdefault("current_scene", "Oasis perdido")
+        self.state.setdefault("active_party", [])
+        self.state.setdefault("party_chats", {})
 
     def _save_state(self) -> None:
         try:

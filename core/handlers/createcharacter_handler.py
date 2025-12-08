@@ -10,6 +10,7 @@ from telegram.ext import (
 import logging
 
 from core.character_builder.builder_interactive import CharacterBuilderInteractive
+from core.character_builder.point_buy_system import PointBuySystem, ATTRIBUTES
 
 # Estados de conversación
 (
@@ -17,16 +18,90 @@ from core.character_builder.builder_interactive import CharacterBuilderInteracti
     RACE,
     CLASS,
     BACKGROUND,
-    ATTRIBUTES,
+    ATTRIBUTE_METHOD,  # Choose point buy or standard array
+    ATTRIBUTES,  # Point buy allocation
     SKILLS,
     CONFIRM,
-) = range(7)
+) = range(8)
 
 logger = logging.getLogger("CreateCharacterHandler")
 
 
 def register_createcharacter_conversation(application, campaign_manager):
     builder = CharacterBuilderInteractive()
+    
+    async def _show_point_buy_interface(query, data: dict, context: ContextTypes.DEFAULT_TYPE):
+        """Shows the point buy interface for current attribute."""
+        point_buy: PointBuySystem = context.user_data.get("point_buy_system")
+        if not point_buy:
+            point_buy = PointBuySystem()
+            context.user_data["point_buy_system"] = point_buy
+        attributes = data.get("attributes", {})
+        current_index = data.get("current_attr_index", 0)
+        current_attr = ATTRIBUTES[current_index]
+        current_value = attributes.get(current_attr, 8)
+        remaining_points = point_buy.get_remaining_points(attributes)
+        
+        # Build message
+        message = f"💪 *Point Buy - {current_attr}*\n\n"
+        message += f"Valor actual: *{current_value}*\n"
+        message += f"Puntos restantes: *{remaining_points}/27*\n\n"
+        
+        # Show all attributes status
+        message += "📊 Atributos:\n"
+        for i, attr in enumerate(ATTRIBUTES):
+            value = attributes.get(attr, 8)
+            cost = point_buy.get_cost(value)
+            marker = "👉" if i == current_index else "  "
+            message += f"{marker} {attr}: {value} ({cost} pts)\n"
+        
+        message += f"\nUsa los botones para ajustar {current_attr}."
+        
+        # Build keyboard
+        keyboard = []
+        
+        # Decrease button
+        if point_buy.can_decrease(current_value):
+            keyboard.append([InlineKeyboardButton("➖ Reducir", callback_data=f"attr_dec_{current_attr}")])
+        
+        # Current value (info)
+        keyboard.append([InlineKeyboardButton(f"Valor: {current_value} (Costo: {point_buy.get_cost(current_value)} pts)", callback_data="attr_info")])
+        
+        # Increase button
+        if point_buy.can_increase(current_value, remaining_points):
+            next_value = current_value + 1
+            next_cost = point_buy.get_cost(next_value)
+            keyboard.append([InlineKeyboardButton(f"➕ Aumentar ({next_cost} pts)", callback_data=f"attr_inc_{current_attr}")])
+        
+        # Navigation buttons
+        nav_row = []
+        if current_index > 0:
+            nav_row.append(InlineKeyboardButton("◀️ Anterior", callback_data="attr_prev"))
+        if current_index < len(ATTRIBUTES) - 1:
+            nav_row.append(InlineKeyboardButton("Siguiente ▶️", callback_data="attr_next"))
+        if nav_row:
+            keyboard.append(nav_row)
+        
+        # Done button (only if all attributes are set and points are used)
+        if current_index == len(ATTRIBUTES) - 1:
+            if remaining_points == 0:
+                keyboard.append([InlineKeyboardButton("✅ Confirmar Atributos", callback_data="attr_done")])
+            else:
+                keyboard.append([InlineKeyboardButton(f"⚠️ Usa todos los puntos ({remaining_points} restantes)", callback_data="attr_info")])
+        
+        # Standard array option
+        keyboard.append([InlineKeyboardButton("🔄 Usar Array Estándar", callback_data="attr_standard")])
+        
+        try:
+            if hasattr(query, 'edit_message_text'):
+                await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            else:
+                # If it's a message update, send new message
+                await query.message.reply_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Error showing point buy interface: {e}")
+            # Fallback: send new message
+            await query.message.reply_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     async def start_creation(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["character_data"] = {}
@@ -71,24 +146,165 @@ def register_createcharacter_conversation(application, campaign_manager):
         if not builder.process_step("background", query.data, data):
             await query.edit_message_text("❌ Trasfondo inválido.")
             return BACKGROUND
-        await query.edit_message_text(builder.get_prompt("attributes"))
-        return ATTRIBUTES
+        
+        # Ask for attribute method
+        keyboard = [
+            [InlineKeyboardButton("📊 Point Buy (27 puntos)", callback_data="point_buy")],
+            [InlineKeyboardButton("🎲 Array Estándar (15,14,13,12,10,8)", callback_data="standard_array")],
+        ]
+        await query.edit_message_text(
+            "💪 ¿Cómo quieres asignar tus atributos?\n\n"
+            "📊 *Point Buy*: Asigna 27 puntos (8-15 por atributo)\n"
+            "🎲 *Array Estándar*: Usa valores predefinidos",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        return ATTRIBUTE_METHOD
 
-    async def attributes_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def attribute_method_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handles choice between point buy and standard array."""
+        query = update.callback_query
+        await query.answer()
         data = context.user_data["character_data"]
-        if not builder.process_step("attributes", update.message.text, data):
-            await update.message.reply_text("❌ Formato inválido. Intenta de nuevo o deja vacío para usar el estándar.")
+        method = query.data
+        
+        if method == "standard_array":
+            # Use standard array
+            point_buy = PointBuySystem()
+            data["attributes"] = point_buy.apply_standard_array()
+            data["attribute_method"] = "standard_array"
+            data["modifiers"] = {k: (v - 10) // 2 for k, v in data["attributes"].items()}
+            
+            race = data.get("race", "")
+            if race:
+                await query.edit_message_text(
+                    f"✅ Array estándar aplicado.\n"
+                    f"✨ Los bonos raciales de {race} se aplicarán automáticamente.\n\n"
+                    f"{builder.get_prompt('skills', data)}"
+                )
+            else:
+                await query.edit_message_text(
+                    f"✅ Array estándar aplicado.\n\n"
+                    f"{builder.get_prompt('skills', data)}"
+                )
+            return SKILLS
+        
+        elif method == "point_buy":
+            # Initialize point buy
+            data["attribute_method"] = "point_buy"
+            data["attributes"] = {attr: 8 for attr in ATTRIBUTES}  # Start at minimum
+            data["current_attr_index"] = 0  # Start with STR
+            context.user_data["point_buy_system"] = PointBuySystem()
+            
+            # Show point buy interface for first attribute
+            await _show_point_buy_interface(query, data, context)
             return ATTRIBUTES
         
-        # Show attributes with racial bonuses preview
-        race = data.get("race")
-        if race:
-            await update.message.reply_text(
-                f"✨ Los bonos raciales de {race} se aplicarán automáticamente después."
-            )
+        return ATTRIBUTE_METHOD
+
+    async def attributes_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handles point buy attribute allocation via buttons."""
+        query = update.callback_query
+        await query.answer()
+        data = context.user_data["character_data"]
+        point_buy: PointBuySystem = context.user_data.get("point_buy_system", PointBuySystem())
+        attributes = data.get("attributes", {})
+        current_index = data.get("current_attr_index", 0)
+        current_attr = ATTRIBUTES[current_index]
+        current_value = attributes.get(current_attr, 8)
+        remaining_points = point_buy.get_remaining_points(attributes)
         
-        await update.message.reply_text(builder.get_prompt("skills", data))
-        return SKILLS
+        callback_data = query.data
+        
+        # Handle attribute increase
+        if callback_data.startswith("attr_inc_"):
+            attr_name = callback_data.replace("attr_inc_", "")
+            if attr_name == current_attr:
+                next_value = current_value + 1
+                next_cost = point_buy.get_cost(next_value)
+                if remaining_points >= next_cost and next_value <= 15:
+                    attributes[attr_name] = next_value
+                    data["attributes"] = attributes
+                    data["modifiers"] = {k: (v - 10) // 2 for k, v in attributes.items()}
+                    await _show_point_buy_interface(query, data, context)
+                else:
+                    await query.answer("No tienes suficientes puntos o el valor es demasiado alto.", show_alert=True)
+            return ATTRIBUTES
+        
+        # Handle attribute decrease
+        elif callback_data.startswith("attr_dec_"):
+            attr_name = callback_data.replace("attr_dec_", "")
+            if attr_name == current_attr and current_value > 8:
+                attributes[attr_name] = current_value - 1
+                data["attributes"] = attributes
+                data["modifiers"] = {k: (v - 10) // 2 for k, v in attributes.items()}
+                await _show_point_buy_interface(query, data, context)
+            return ATTRIBUTES
+        
+        # Handle navigation
+        elif callback_data == "attr_prev":
+            if current_index > 0:
+                data["current_attr_index"] = current_index - 1
+                await _show_point_buy_interface(query, data, context)
+            return ATTRIBUTES
+        
+        elif callback_data == "attr_next":
+            if current_index < len(ATTRIBUTES) - 1:
+                data["current_attr_index"] = current_index + 1
+                await _show_point_buy_interface(query, data, context)
+            return ATTRIBUTES
+        
+        # Handle done
+        elif callback_data == "attr_done":
+            # Validate allocation
+            is_valid, error = point_buy.validate_allocation(attributes)
+            if not is_valid:
+                await query.answer(error, show_alert=True)
+                return ATTRIBUTES
+            
+            # Attributes are valid, move to skills
+            race = data.get("race", "")
+            if race:
+                await query.edit_message_text(
+                    f"✅ Atributos asignados correctamente.\n"
+                    f"✨ Los bonos raciales de {race} se aplicarán automáticamente.\n\n"
+                    f"{builder.get_prompt('skills', data)}"
+                )
+            else:
+                await query.edit_message_text(
+                    f"✅ Atributos asignados correctamente.\n\n"
+                    f"{builder.get_prompt('skills', data)}"
+                )
+            return SKILLS
+        
+        # Handle standard array switch
+        elif callback_data == "attr_standard":
+            data["attributes"] = point_buy.apply_standard_array()
+            data["attribute_method"] = "standard_array"
+            data["modifiers"] = {k: (v - 10) // 2 for k, v in data["attributes"].items()}
+            
+            race = data.get("race", "")
+            if race:
+                await query.edit_message_text(
+                    f"✅ Array estándar aplicado.\n"
+                    f"✨ Los bonos raciales de {race} se aplicarán automáticamente.\n\n"
+                    f"{builder.get_prompt('skills', data)}"
+                )
+            else:
+                await query.edit_message_text(
+                    f"✅ Array estándar aplicado.\n\n"
+                    f"{builder.get_prompt('skills', data)}"
+                )
+            return SKILLS
+        
+        # Info button (no action)
+        elif callback_data == "attr_info":
+            await query.answer()
+            return ATTRIBUTES
+        
+        return ATTRIBUTES
+
+    # Old attributes_step removed - now handled by point buy system
 
     async def skills_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = context.user_data["character_data"]
@@ -164,7 +380,8 @@ def register_createcharacter_conversation(application, campaign_manager):
             RACE: [CallbackQueryHandler(race_step)],
             CLASS: [CallbackQueryHandler(class_step)],
             BACKGROUND: [CallbackQueryHandler(background_step)],
-            ATTRIBUTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, attributes_step)],
+            ATTRIBUTE_METHOD: [CallbackQueryHandler(attribute_method_step)],
+            ATTRIBUTES: [CallbackQueryHandler(attributes_step)],
             SKILLS: [MessageHandler(filters.TEXT & ~filters.COMMAND, skills_step)],
             CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_step)],
         },
