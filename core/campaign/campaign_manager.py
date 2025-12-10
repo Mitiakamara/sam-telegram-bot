@@ -353,28 +353,40 @@ class CampaignManager:
         """
         Carga el estado desde un diccionario.
         Útil para restaurar desde StoryDirector.
+        IMPORTANTE: Sobrescribe completamente el estado, incluyendo adventure_data.
         """
         if data:
-            # Preservar adventure_data y campos relacionados si existen
-            adventure_data = data.get("adventure_data")
-            current_scene_id = data.get("current_scene_id")
-            adventure_scenes = data.get("adventure_scenes")
-            campaign_title = data.get("campaign_title")
-            
+            # IMPORTANTE: Actualizar el estado completo primero
             self.state.update(data)
             
-            # Asegurar que adventure_data se preserve
+            # Preservar explícitamente adventure_data y campos relacionados
+            # Incluso si son None, para asegurar sincronización
+            if "adventure_data" in data:
+                self.state["adventure_data"] = data["adventure_data"]
+            if "current_scene_id" in data:
+                self.state["current_scene_id"] = data["current_scene_id"]
+            if "adventure_scenes" in data:
+                self.state["adventure_scenes"] = data["adventure_scenes"]
+            if "campaign_title" in data:
+                self.state["campaign_title"] = data["campaign_title"]
+            
+            # Logging detallado
+            adventure_data = self.state.get("adventure_data")
+            current_scene_id = self.state.get("current_scene_id")
+            campaign_name = self.state.get("campaign_name", "")
+            
             if adventure_data:
-                self.state["adventure_data"] = adventure_data
-            if current_scene_id:
-                self.state["current_scene_id"] = current_scene_id
-            if adventure_scenes:
-                self.state["adventure_scenes"] = adventure_scenes
-            if campaign_title:
-                self.state["campaign_title"] = campaign_title
+                if isinstance(adventure_data, dict) and "scenes" in adventure_data:
+                    scene_count = len(adventure_data.get("scenes", []))
+                    self.logger.info(f"[CampaignManager] Estado cargado desde diccionario. adventure_data: True ({scene_count} escenas), current_scene_id: {current_scene_id}, campaign_name: {campaign_name}")
+                else:
+                    self.logger.warning(f"[CampaignManager] adventure_data cargado pero no tiene estructura válida. Tipo: {type(adventure_data)}")
+            else:
+                self.logger.warning(f"[CampaignManager] Estado cargado desde diccionario. adventure_data: None, current_scene_id: {current_scene_id}, campaign_name: {campaign_name}")
+                if campaign_name and campaign_name not in ["TheGeniesWishes", "The Genie's Wishes – Chapter 1: Cold Open"]:
+                    self.logger.warning(f"[CampaignManager] ADVERTENCIA: campaign_name='{campaign_name}' pero adventure_data es None. El estado podría estar desincronizado.")
             
             self._save_state()
-            self.logger.info(f"[CampaignManager] Estado cargado desde diccionario. adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}")
 
     def to_dict(self) -> Dict[str, Any]:
         """

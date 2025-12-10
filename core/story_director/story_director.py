@@ -60,6 +60,22 @@ class StoryDirector:
                     data = json.load(f)
                 self.players = data.get("players", {})
                 campaign_data = data.get("campaign", {})
+                
+                # Verificar que adventure_data esté en campaign_data antes de cargar
+                adventure_data_in_file = 'adventure_data' in campaign_data and campaign_data.get('adventure_data') is not None
+                campaign_name_in_file = campaign_data.get('campaign_name', '')
+                current_scene_id_in_file = campaign_data.get('current_scene_id')
+                
+                if adventure_data_in_file:
+                    adventure = campaign_data.get('adventure_data')
+                    if isinstance(adventure, dict) and "scenes" in adventure:
+                        scene_count = len(adventure.get('scenes', []))
+                        logger.info(f"[StoryDirector] _load_state - adventure_data presente en archivo ({scene_count} escenas), campaign_name: {campaign_name_in_file}, current_scene_id: {current_scene_id_in_file}")
+                    else:
+                        logger.warning(f"[StoryDirector] _load_state - adventure_data en archivo pero no tiene estructura válida")
+                else:
+                    logger.warning(f"[StoryDirector] _load_state - adventure_data NO presente en archivo. campaign_name: {campaign_name_in_file}, current_scene_id: {current_scene_id_in_file}")
+                
                 self.campaign_manager.load_from_dict(campaign_data)
                 
                 # Verificar y corregir current_scene si tiene un nombre de archivo JSON

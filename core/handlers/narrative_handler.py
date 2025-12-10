@@ -40,8 +40,9 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"[NarrativeHandler] adventure_data es None. Estado completo: campaign_name={campaign_name}, current_scene_id={current_scene_id}, current_scene={current_scene}")
     
     # Si adventure_data es None pero hay campaign_name, intentar recargar INMEDIATAMENTE
-    # IMPORTANTE: Siempre recargar si campaign_name existe y no es "TheGeniesWishes"
-    if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes" and campaign_name != "The Genie's Wishes – Chapter 1: Cold Open":
+    # IMPORTANTE: Siempre recargar si campaign_name existe y no es un valor por defecto
+    default_campaigns = ["TheGeniesWishes", "The Genie's Wishes – Chapter 1: Cold Open"]
+    if not adventure_data and campaign_name and campaign_name not in default_campaigns:
         logger.warning(f"[NarrativeHandler] adventure_data es None pero campaign_name='{campaign_name}'. Recargando aventura...")
         try:
             sd.load_campaign(campaign_name)
@@ -52,6 +53,12 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Si después de recargar todavía no hay adventure_data, es un error crítico
             if not adventure_data:
                 logger.error(f"[NarrativeHandler] ERROR CRÍTICO: Después de recargar '{campaign_name}', adventure_data sigue siendo None!")
+                # Intentar una vez más como último recurso
+                logger.warning(f"[NarrativeHandler] Intentando recargar '{campaign_name}' una vez más como último recurso...")
+                sd.load_campaign(campaign_name)
+                adventure_data = campaign_manager.state.get("adventure_data")
+                current_scene_id = campaign_manager.state.get("current_scene_id")
+                logger.info(f"[NarrativeHandler] Después de segunda recarga - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}")
         except Exception as e:
             logger.error(f"[NarrativeHandler] Error al recargar aventura: {e}", exc_info=True)
     
