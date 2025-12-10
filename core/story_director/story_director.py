@@ -86,16 +86,59 @@ class StoryDirector:
                 logger.warning(f"[StoryDirector] No se pudo cargar el estado: {e}")
 
     def _save_state(self) -> None:
+        campaign_dict = self.campaign_manager.to_dict()
+        
+        # Verificar que adventure_data está en el diccionario antes de guardar
+        adventure_data_in_dict = 'adventure_data' in campaign_dict and campaign_dict.get('adventure_data') is not None
+        current_scene_id_in_dict = campaign_dict.get('current_scene_id')
+        campaign_name_in_dict = campaign_dict.get('campaign_name', '')
+        
+        if adventure_data_in_dict:
+            adventure = campaign_dict.get('adventure_data')
+            if isinstance(adventure, dict):
+                scene_count = len(adventure.get('scenes', []))
+                logger.info(f"[StoryDirector] _save_state - adventure_data presente en to_dict() ({scene_count} escenas), current_scene_id: {current_scene_id_in_dict}, campaign_name: {campaign_name_in_dict}")
+            else:
+                logger.warning(f"[StoryDirector] _save_state - adventure_data en to_dict() pero no es dict: {type(adventure)}")
+        else:
+            logger.error(f"[StoryDirector] _save_state - ERROR: adventure_data NO está en to_dict()! campaign_name: {campaign_name_in_dict}, current_scene_id: {current_scene_id_in_dict}")
+        
         data = {
             "players": self.players,
-            "campaign": self.campaign_manager.to_dict(),
+            "campaign": campaign_dict,
         }
+        
         try:
+            # Intentar serializar para verificar que no hay problemas
+            json_str = json.dumps(data, ensure_ascii=False, indent=2)
+            json_size = len(json_str)
+            logger.info(f"[StoryDirector] Estado serializado correctamente. Tamaño: {json_size} bytes")
+            
             with open(self.STATE_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            
+            # Verificar que se guardó correctamente
+            if adventure_data_in_dict:
+                try:
+                    with open(self.STATE_PATH, "r", encoding="utf-8") as f:
+                        saved_data = json.load(f)
+                        saved_campaign = saved_data.get("campaign", {})
+                        saved_has_adventure = 'adventure_data' in saved_campaign and saved_campaign.get('adventure_data') is not None
+                        if saved_has_adventure:
+                            saved_adventure = saved_campaign.get('adventure_data')
+                            if isinstance(saved_adventure, dict):
+                                saved_scene_count = len(saved_adventure.get('scenes', []))
+                                logger.info(f"[StoryDirector] Estado guardado y verificado. adventure_data en archivo: True ({saved_scene_count} escenas)")
+                            else:
+                                logger.warning(f"[StoryDirector] adventure_data guardado pero no es dict: {type(saved_adventure)}")
+                        else:
+                            logger.error(f"[StoryDirector] ERROR: adventure_data NO se guardó en el archivo aunque estaba presente antes de guardar!")
+                except Exception as e:
+                    logger.warning(f"[StoryDirector] No se pudo verificar el archivo guardado: {e}", exc_info=True)
+            
             logger.info("[StoryDirector] Estado guardado.")
         except Exception as e:
-            logger.warning(f"[StoryDirector] No se pudo guardar el estado: {e}")
+            logger.error(f"[StoryDirector] No se pudo guardar el estado: {e}", exc_info=True)
 
     # ------------------------------------------------------------------
     # Gestión de jugadores
