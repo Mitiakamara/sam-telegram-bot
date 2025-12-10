@@ -392,5 +392,15 @@ class CampaignManager:
             state_copy["adventure_scenes"] = self.state["adventure_scenes"]
         if "campaign_title" in self.state:
             state_copy["campaign_title"] = self.state["campaign_title"]
-        self.logger.debug(f"[CampaignManager] to_dict() - adventure_data presente: {'adventure_data' in state_copy}, current_scene_id: {state_copy.get('current_scene_id')}")
+        has_adventure = 'adventure_data' in state_copy
+        scene_id = state_copy.get('current_scene_id')
+        if has_adventure:
+            adventure = state_copy.get('adventure_data')
+            if isinstance(adventure, dict):
+                scene_count = len(adventure.get('scenes', []))
+                self.logger.info(f"[CampaignManager] to_dict() - adventure_data presente: True ({scene_count} escenas), current_scene_id: {scene_id}")
+            else:
+                self.logger.warning(f"[CampaignManager] to_dict() - adventure_data presente pero no es dict: {type(adventure)}")
+        else:
+            self.logger.warning(f"[CampaignManager] to_dict() - adventure_data NO presente, current_scene_id: {scene_id}")
         return state_copy

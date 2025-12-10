@@ -51,9 +51,26 @@ async def loadcampaign(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     slug = context.args[0]
     try:
+        logger.info(f"[CampaignHandler] Cargando campaña '{slug}'...")
         sd.load_campaign(slug)
+        
+        # Verificar que adventure_data se guardó correctamente
+        adventure_data = sd.campaign_manager.state.get("adventure_data")
+        current_scene_id = sd.campaign_manager.state.get("current_scene_id")
         adventure_title = sd.campaign_manager.state.get("campaign_title", slug)
         total_scenes = len(sd.campaign_manager.state.get("adventure_scenes", []))
+        
+        logger.info(f"[CampaignHandler] Después de load_campaign - adventure_data presente: {adventure_data is not None}, current_scene_id: {current_scene_id}, total_scenes: {total_scenes}")
+        
+        if not adventure_data:
+            logger.error(f"[CampaignHandler] ERROR: adventure_data NO está presente después de load_campaign!")
+            await update.message.reply_text(
+                f"⚠️ Error: La aventura se cargó pero adventure_data no se guardó correctamente.\n"
+                f"Intenta ejecutar `/loadcampaign {slug}` nuevamente.",
+                parse_mode="Markdown"
+            )
+            return
+        
         await update.message.reply_text(
             f"📦 *Campaña cargada*\n\n"
             f"🎭 {adventure_title}\n"
