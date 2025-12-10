@@ -40,7 +40,8 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"[NarrativeHandler] adventure_data es None. Estado completo: campaign_name={campaign_name}, current_scene_id={current_scene_id}, current_scene={current_scene}")
     
     # Si adventure_data es None pero hay campaign_name, intentar recargar INMEDIATAMENTE
-    if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes":
+    # IMPORTANTE: Siempre recargar si campaign_name existe y no es "TheGeniesWishes"
+    if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes" and campaign_name != "The Genie's Wishes – Chapter 1: Cold Open":
         logger.warning(f"[NarrativeHandler] adventure_data es None pero campaign_name='{campaign_name}'. Recargando aventura...")
         try:
             sd.load_campaign(campaign_name)
@@ -48,8 +49,11 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
             adventure_data = campaign_manager.state.get("adventure_data")
             current_scene_id = campaign_manager.state.get("current_scene_id")
             logger.info(f"[NarrativeHandler] Después de recargar - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}")
+            # Si después de recargar todavía no hay adventure_data, es un error crítico
+            if not adventure_data:
+                logger.error(f"[NarrativeHandler] ERROR CRÍTICO: Después de recargar '{campaign_name}', adventure_data sigue siendo None!")
         except Exception as e:
-            logger.error(f"[NarrativeHandler] Error al recargar aventura: {e}")
+            logger.error(f"[NarrativeHandler] Error al recargar aventura: {e}", exc_info=True)
     
     # Si hay adventure_data, mostrar la escena directamente
     if adventure_data and current_scene_id:
@@ -85,13 +89,15 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"[NarrativeHandler] Error showing adventure scene directly: {e}", exc_info=True)
     
     # Si no hay adventure_data pero hay campaign_name, intentar recargar
-    if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes":
-        logger.warning(f"[NarrativeHandler] adventure_data es None, recargando '{campaign_name}'")
+    # Esta es una segunda oportunidad después del primer intento
+    if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes" and campaign_name != "The Genie's Wishes – Chapter 1: Cold Open":
+        logger.warning(f"[NarrativeHandler] adventure_data es None (segunda verificación), recargando '{campaign_name}'")
         try:
             sd.load_campaign(campaign_name)
             # Intentar de nuevo
             adventure_data = campaign_manager.state.get("adventure_data")
             current_scene_id = campaign_manager.state.get("current_scene_id")
+            logger.info(f"[NarrativeHandler] Después de segunda recarga - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}")
             if adventure_data and current_scene_id:
                 from core.adventure.adventure_loader import AdventureLoader
                 loader = AdventureLoader()
@@ -107,8 +113,10 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     logger.info(f"[NarrativeHandler] Found adventure scene after reload: {title}")
                     await update.message.reply_text(result, parse_mode="Markdown")
                     return
+            else:
+                logger.error(f"[NarrativeHandler] ERROR: Después de segunda recarga, adventure_data o current_scene_id siguen siendo None")
         except Exception as e:
-            logger.error(f"[NarrativeHandler] Error recargando aventura: {e}")
+            logger.error(f"[NarrativeHandler] Error recargando aventura: {e}", exc_info=True)
     
     # Fallback: usar render_current_scene()
     logger.info("[NarrativeHandler] Calling render_current_scene()")
