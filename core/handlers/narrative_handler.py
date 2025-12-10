@@ -31,6 +31,14 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"[NarrativeHandler] Direct check - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}, campaign_name: {campaign_name}, current_scene: {current_scene}")
     
+    # Logging detallado del estado
+    if adventure_data:
+        logger.info(f"[NarrativeHandler] adventure_data type: {type(adventure_data)}, has 'scenes' key: {'scenes' in adventure_data if isinstance(adventure_data, dict) else False}")
+        if isinstance(adventure_data, dict) and "scenes" in adventure_data:
+            logger.info(f"[NarrativeHandler] adventure_data tiene {len(adventure_data.get('scenes', []))} escenas")
+    else:
+        logger.warning(f"[NarrativeHandler] adventure_data es None. Estado completo: campaign_name={campaign_name}, current_scene_id={current_scene_id}, current_scene={current_scene}")
+    
     # Si adventure_data es None pero hay campaign_name, intentar recargar INMEDIATAMENTE
     if not adventure_data and campaign_name and campaign_name != "TheGeniesWishes":
         logger.warning(f"[NarrativeHandler] adventure_data es None pero campaign_name='{campaign_name}'. Recargando aventura...")

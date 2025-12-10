@@ -138,6 +138,15 @@ class CampaignManager:
                 self.logger.info(f"[CampaignManager] current_scene corregido a: Escena actual (no hay adventure_data)")
             # Guardar el estado corregido
             self._save_state()
+        
+        # VERIFICACIÓN ADICIONAL: Si hay campaign_name pero no adventure_data, intentar recargar
+        campaign_name = self.state.get("campaign_name", "")
+        adventure_data = self.state.get("adventure_data")
+        if campaign_name and campaign_name != "TheGeniesWishes" and not adventure_data:
+            self.logger.warning(f"[CampaignManager] campaign_name='{campaign_name}' pero adventure_data es None. Esto sugiere que el estado no se guardó correctamente.")
+            # Intentar recargar la aventura desde el StoryDirector (si está disponible)
+            # Nota: No podemos acceder a StoryDirector desde aquí, así que solo logueamos
+            self.logger.info(f"[CampaignManager] Se recomienda ejecutar /loadcampaign {campaign_name} para recargar la aventura")
 
     def _save_state(self) -> None:
         try:
