@@ -153,7 +153,26 @@ class CampaignManager:
             # Verificar que adventure_data está presente antes de guardar
             has_adventure_data = "adventure_data" in self.state and self.state.get("adventure_data") is not None
             current_scene_id = self.state.get("current_scene_id")
-            self.logger.debug(f"[CampaignManager] _save_state - adventure_data presente: {has_adventure_data}, current_scene_id: {current_scene_id}")
+            campaign_name = self.state.get("campaign_name", "")
+            
+            if has_adventure_data:
+                adventure_data = self.state.get("adventure_data")
+                if isinstance(adventure_data, dict):
+                    scene_count = len(adventure_data.get("scenes", []))
+                    self.logger.info(f"[CampaignManager] _save_state - Guardando estado con adventure_data ({scene_count} escenas), current_scene_id: {current_scene_id}, campaign_name: {campaign_name}")
+                else:
+                    self.logger.warning(f"[CampaignManager] _save_state - adventure_data no es un dict: {type(adventure_data)}")
+            else:
+                self.logger.warning(f"[CampaignManager] _save_state - adventure_data NO está presente. campaign_name: {campaign_name}, current_scene_id: {current_scene_id}")
+            
+            # Intentar serializar para verificar que no hay problemas
+            try:
+                json_str = json.dumps(self.state, ensure_ascii=False, indent=2)
+                json_size = len(json_str)
+                self.logger.debug(f"[CampaignManager] Estado serializado correctamente. Tamaño: {json_size} bytes")
+            except Exception as e:
+                self.logger.error(f"[CampaignManager] Error al serializar estado: {e}", exc_info=True)
+                raise
             
             with open(self.state_path, "w", encoding="utf-8") as f:
                 json.dump(self.state, f, ensure_ascii=False, indent=2)
@@ -164,11 +183,19 @@ class CampaignManager:
                     with open(self.state_path, "r", encoding="utf-8") as f:
                         saved_data = json.load(f)
                         saved_has_adventure = "adventure_data" in saved_data and saved_data.get("adventure_data") is not None
-                        self.logger.info(f"[CampaignManager] Estado guardado. adventure_data en archivo: {saved_has_adventure}, current_scene_id guardado: {saved_data.get('current_scene_id')}")
+                        if saved_has_adventure:
+                            saved_adventure = saved_data.get("adventure_data")
+                            if isinstance(saved_adventure, dict):
+                                saved_scene_count = len(saved_adventure.get("scenes", []))
+                                self.logger.info(f"[CampaignManager] Estado guardado y verificado. adventure_data en archivo: True ({saved_scene_count} escenas), current_scene_id guardado: {saved_data.get('current_scene_id')}")
+                            else:
+                                self.logger.warning(f"[CampaignManager] adventure_data guardado pero no es un dict: {type(saved_adventure)}")
+                        else:
+                            self.logger.error(f"[CampaignManager] ERROR: adventure_data NO se guardó en el archivo aunque estaba presente antes de guardar!")
                 except Exception as e:
-                    self.logger.warning(f"[CampaignManager] No se pudo verificar el archivo guardado: {e}")
+                    self.logger.warning(f"[CampaignManager] No se pudo verificar el archivo guardado: {e}", exc_info=True)
         except Exception as e:
-            self.logger.error("[CampaignManager] Error guardando estado: %s", e)
+            self.logger.error("[CampaignManager] Error guardando estado: %s", e, exc_info=True)
 
     # ---------------------------------------------------------
     # API pública que usan los handlers
