@@ -129,43 +129,45 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("[NarrativeHandler] Calling render_current_scene()")
     result = sd.render_current_scene()
     
-    # Verificar que el resultado no sea "progress_scene.json" o "Escena actual"
-    if "progress_scene.json" in result or (result.strip() == "🎭 *Escena actual*\n\nEscena actual" or result.strip().endswith("Escena actual\nEscena actual")):
-        logger.warning(f"[NarrativeHandler] render_current_scene devolvió resultado inválido: '{result[:50]}...'")
-        # Último intento: forzar recarga de la aventura
-        if campaign_name and campaign_name != "TheGeniesWishes":
-            logger.info(f"[NarrativeHandler] Forzando recarga de aventura '{campaign_name}' como último recurso")
+    logger.info(f"[NarrativeHandler] render_current_scene returned: {result[:150]}...")
+    
+    # Verificar que el resultado tenga narración válida (no solo título)
+    # Si el resultado es solo título sin narración, intentar obtener la escena directamente
+    if result and ("🎭 *Escena actual*" in result or "🎭 Escena actual:" in result or 
+                   (result.count("\n") < 2 and "narration" not in result.lower())):
+        logger.warning(f"[NarrativeHandler] render_current_scene devolvió resultado sin narración completa: '{result[:100]}...'")
+        
+        # Intentar obtener la escena directamente una última vez
+        adventure_data = campaign_manager.state.get("adventure_data")
+        current_scene_id = campaign_manager.state.get("current_scene_id")
+        
+        if adventure_data and current_scene_id:
+            logger.info(f"[NarrativeHandler] Último intento: obtener escena directamente con ID '{current_scene_id}'")
             try:
-                sd.load_campaign(campaign_name)
-                # Intentar obtener la escena directamente después de recargar
-                adventure_data = campaign_manager.state.get("adventure_data")
-                current_scene_id = campaign_manager.state.get("current_scene_id")
-                if adventure_data and current_scene_id:
-                    from core.adventure.adventure_loader import AdventureLoader
-                    loader = AdventureLoader()
-                    scene = loader.find_scene_by_id(adventure_data, current_scene_id)
-                    if scene:
-                        narration = scene.get("narration", "")
-                        title = scene.get("title", "Escena")
-                        options_text = scene.get("options_text", [])
-                        options_list = ""
-                        if options_text:
-                            options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
-                        result = f"🎭 *{title}*\n\n{narration}{options_list}"
-                        logger.info(f"[NarrativeHandler] Escena encontrada después de recarga forzada: {title}")
-                        await update.message.reply_text(result, parse_mode="Markdown")
-                        return
+                from core.adventure.adventure_loader import AdventureLoader
+                loader = AdventureLoader()
+                scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+                if scene:
+                    narration = scene.get("narration", "")
+                    title = scene.get("title", "Escena")
+                    options_text = scene.get("options_text", [])
+                    options_list = ""
+                    if options_text:
+                        options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
+                    result = f"🎭 *{title}*\n\n{narration}{options_list}"
+                    logger.info(f"[NarrativeHandler] Escena encontrada en último intento: {title}")
+                    await update.message.reply_text(result, parse_mode="Markdown")
+                    return
             except Exception as e:
-                logger.error(f"[NarrativeHandler] Error en recarga forzada: {e}", exc_info=True)
+                logger.error(f"[NarrativeHandler] Error en último intento: {e}", exc_info=True)
         
         # Si todo falla, mostrar mensaje de error útil
         current_scene_name = campaign_manager.state.get("current_scene", "Escena actual")
         if current_scene_name and not current_scene_name.endswith(".json") and current_scene_name != "Escena actual":
-            result = f"🎭 *{current_scene_name}*\n\n{current_scene_name}"
+            result = f"🎭 *{current_scene_name}*\n\n⚠️ No se pudo cargar la narración de la escena. Intenta ejecutar `/loadcampaign demo_mine_v1` nuevamente."
         else:
             result = "🎭 *Escena actual*\n\n⚠️ No se pudo cargar la escena de la aventura. Intenta ejecutar `/loadcampaign demo_mine_v1` nuevamente."
     
-    logger.info(f"[NarrativeHandler] render_current_scene returned: {result[:100]}...")
     await update.message.reply_text(result, parse_mode="Markdown")
 
 async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):

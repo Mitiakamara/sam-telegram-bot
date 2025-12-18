@@ -366,6 +366,8 @@ class StoryDirector:
         current_scene_id = self.campaign_manager.state.get("current_scene_id")
         campaign_name = self.campaign_manager.state.get("campaign_name", "")
         
+        logger.info(f"[StoryDirector] render_current_scene - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}, campaign_name: {campaign_name}")
+        
         # Si hay adventure_data, intentar mostrar la escena directamente
         if adventure_data and current_scene_id:
             from core.adventure.adventure_loader import AdventureLoader
@@ -378,7 +380,11 @@ class StoryDirector:
                 options_list = ""
                 if options_text:
                     options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
-                return f"🎭 *{title}*\n\n{narration}{options_list}"
+                result = f"🎭 *{title}*\n\n{narration}{options_list}"
+                logger.info(f"[StoryDirector] render_current_scene - Escena encontrada directamente: {title} (ID: {current_scene_id})")
+                return result
+            else:
+                logger.warning(f"[StoryDirector] render_current_scene - No se encontró escena con ID '{current_scene_id}' en adventure_data")
         
         # Si no hay adventure_data pero hay campaign_name, intentar recargar
         default_campaigns = ["TheGeniesWishes", "The Genie's Wishes – Chapter 1: Cold Open"]
@@ -408,7 +414,10 @@ class StoryDirector:
                 logger.error(f"[StoryDirector] Error al recargar aventura en render_current_scene: {e}", exc_info=True)
         
         # Fallback: usar get_current_scene()
+        logger.info("[StoryDirector] render_current_scene - Usando fallback get_current_scene()")
         scene_data = self.get_current_scene()
+        logger.info(f"[StoryDirector] render_current_scene - get_current_scene retornó: found={scene_data.get('found')}, from_adventure={scene_data.get('from_adventure')}")
+        
         if not scene_data.get("found"):
             return f"🎭 *Escena actual*\n\n{scene_data.get('message', 'No hay escena activa.')}"
         
@@ -425,7 +434,9 @@ class StoryDirector:
             if options_text:
                 options_list = "\n\n*Opciones disponibles:*\n" + "\n".join(f"• {opt}" for opt in options_text)
             
-            return f"🎭 *{title}*\n\n{narration}{options_list}"
+            result = f"🎭 *{title}*\n\n{narration}{options_list}"
+            logger.info(f"[StoryDirector] render_current_scene - Escena de aventura encontrada en fallback: {title}")
+            return result
         
         # Escena generada (fallback)
         narrated = scene_data.get("narrated", "")
