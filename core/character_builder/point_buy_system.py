@@ -128,7 +128,14 @@ class PointBuySystem:
         total_cost = self.calculate_total_cost(attributes)
         if total_cost > self.total_points:
             return False, f"Coste total ({total_cost}) excede los puntos disponibles ({self.total_points})"
+        # Permitir avanzar si el costo es menor pero todos los atributos están asignados
+        # El usuario puede volver a ajustar si quiere usar todos los puntos
         if total_cost < self.total_points:
-            return False, f"Debes usar todos los puntos. Usados: {total_cost}/{self.total_points}"
+            remaining = self.total_points - total_cost
+            # Si quedan más de 2 puntos, es probable que el usuario quiera ajustar
+            if remaining > 2:
+                return False, f"Te quedan {remaining} puntos sin usar. Ajusta los atributos para usar todos los puntos o confirma si estás satisfecho."
+            # Si quedan 1-2 puntos, permitir avanzar con advertencia (puede ser difícil usar exactamente todos)
+            # El usuario puede volver a ajustar si quiere
         
         return True, ""

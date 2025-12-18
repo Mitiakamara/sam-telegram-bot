@@ -126,24 +126,17 @@ class ConversationHandler:
         if len(message_text) < 2:
             return
 
-        # IMPORTANTE: Verificar si el usuario está en una conversación activa
-        # Si está en una conversación (como crear personaje), no procesar este mensaje
-        # Dejar que el ConversationHandler específico lo maneje
-        if context.user_data.get("_conversation_active"):
-            logger.debug(f"[ConversationHandler] Usuario {user_id} está en conversación activa, ignorando mensaje")
+        # IMPORTANTE: Verificar PRIMERO si el usuario está en una conversación activa
+        # python-telegram-bot almacena el estado de ConversationHandler en user_data
+        # Si hay datos de creación de personaje, significa que está en una conversación activa
+        if "character_data" in context.user_data:
+            logger.info(f"[ConversationHandler] Usuario {user_id} tiene character_data activo, ignorando mensaje '{message_text[:30]}...' durante creación de personaje")
             return
         
-        # Verificar si hay alguna conversación activa en el contexto
-        # Los ConversationHandler de python-telegram-bot establecen estados en user_data
-        # Si hay un estado de conversación, no procesar aquí
-        conversation_states = [
-            "name", "race", "class", "background", "attribute_method", 
-            "allocate_attributes", "skills", "confirm"
-        ]
-        for state_key in conversation_states:
-            if state_key in context.user_data:
-                logger.debug(f"[ConversationHandler] Usuario {user_id} tiene estado '{state_key}' activo, ignorando mensaje")
-                return
+        # Verificar también por el nombre del ConversationHandler (por si acaso)
+        if "createcharacter_conversation" in context.user_data:
+            logger.info(f"[ConversationHandler] Usuario {user_id} tiene createcharacter_conversation activo, ignorando mensaje")
+            return
 
         # Get player character from campaign
         player = self.campaign_manager.get_player_by_telegram_id(user_id)

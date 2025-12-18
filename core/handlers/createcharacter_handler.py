@@ -84,12 +84,17 @@ def register_createcharacter_conversation(application, campaign_manager):
         if nav_row:
             keyboard.append(nav_row)
         
-        # Done button (only if all attributes are set and points are used)
+        # Done button (only if all attributes are set)
+        # Permitir avanzar si estamos en el último atributo, incluso si quedan puntos
+        # (el usuario puede ajustar otros atributos si necesita usar todos los puntos)
         if current_index == len(ATTRIBUTE_NAMES) - 1:
             if remaining_points == 0:
                 keyboard.append([InlineKeyboardButton("✅ Confirmar Atributos", callback_data="attr_done")])
-            else:
-                keyboard.append([InlineKeyboardButton(f"⚠️ Usa todos los puntos ({remaining_points} restantes)", callback_data="attr_info")])
+            elif remaining_points > 0:
+                # Mostrar opción de confirmar con advertencia si quedan puntos
+                # Pero permitir avanzar si el usuario quiere ajustar otros atributos
+                keyboard.append([InlineKeyboardButton(f"✅ Confirmar ({remaining_points} pts restantes - puedes ajustar otros atributos)", callback_data="attr_done")])
+                keyboard.append([InlineKeyboardButton("◀️ Volver a ajustar atributos anteriores", callback_data="attr_prev")])
         
         # Standard array option
         keyboard.append([InlineKeyboardButton("🔄 Usar Array Estándar", callback_data="attr_standard")])
@@ -261,8 +266,20 @@ def register_createcharacter_conversation(application, campaign_manager):
             # Validate allocation
             is_valid, error = point_buy.validate_allocation(attributes)
             if not is_valid:
-                await query.answer(error, show_alert=True)
-                return ALLOCATE_ATTRIBUTES
+                # Si el error es sobre puntos restantes pero es menor a 3, permitir avanzar con advertencia
+                remaining = point_buy.get_remaining_points(attributes)
+                if remaining > 0 and remaining <= 2:
+                    # Permitir avanzar con advertencia
+                    await query.answer(f"⚠️ Te quedan {remaining} puntos sin usar. Puedes continuar o volver a ajustar.", show_alert=True)
+                    # Continuar con el flujo normal
+                elif remaining > 2:
+                    # No permitir avanzar si quedan muchos puntos
+                    await query.answer(error, show_alert=True)
+                    return ALLOCATE_ATTRIBUTES
+                else:
+                    # Otro tipo de error
+                    await query.answer(error, show_alert=True)
+                    return ALLOCATE_ATTRIBUTES
             
             # Attributes are valid, move to skills
             race = data.get("race", "")
