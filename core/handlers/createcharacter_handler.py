@@ -83,7 +83,7 @@ def register_createcharacter_conversation(application, campaign_manager):
             keyboard.append(nav_row)
         
         # Done button (only if all attributes are set and points are used)
-        if current_index == len(ATTRIBUTES) - 1:
+        if current_index == len(ATTRIBUTE_NAMES) - 1:
             if remaining_points == 0:
                 keyboard.append([InlineKeyboardButton("✅ Confirmar Atributos", callback_data="attr_done")])
             else:
