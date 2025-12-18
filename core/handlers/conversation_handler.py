@@ -214,15 +214,21 @@ class ConversationHandler:
         """
         Registers the conversation handler with the Telegram application.
         This handler processes all text messages that are NOT commands.
+        
+        IMPORTANTE: Este handler debe tener menor prioridad que los ConversationHandler
+        (como createcharacter). Los ConversationHandler se registran primero y tienen
+        prioridad automática cuando están activos.
         """
         # Handler for text messages that are not commands
         # Filters.TEXT matches text, ~filters.COMMAND excludes commands
+        # Usar group=-1 para que tenga menor prioridad que ConversationHandler activos
         handler = MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             self.handle_message
         )
-        application.add_handler(handler)
-        logger.info("[ConversationHandler] Conversational message handler registered.")
+        # Agregar con group=-1 para que ConversationHandler activos tengan prioridad
+        application.add_handler(handler, group=-1)
+        logger.info("[ConversationHandler] Conversational message handler registered with group=-1 (lower priority).")
 
 
 def register_conversation_handler(
