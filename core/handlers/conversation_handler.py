@@ -11,6 +11,7 @@ from core.services.game_service import GameService
 from core.campaign.campaign_manager import CampaignManager
 from core.use_cases.process_player_action import ProcessPlayerActionUseCase
 from core.exceptions import PlayerNotFoundError, GameAPIError
+from core.dice_roller.conversational_roller import ConversationalRoller
 
 logger = logging.getLogger("ConversationHandler")
 
@@ -77,6 +78,7 @@ class ConversationHandler:
         """
         self.process_action_use_case = process_action_use_case
         self.campaign_manager = campaign_manager
+        self.dice_roller = ConversationalRoller(campaign_manager)
 
     async def _get_party_members_in_chat(self, chat_id: int) -> list:
         """
@@ -210,6 +212,21 @@ class ConversationHandler:
 
         # Show typing indicator to all in chat
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+
+        
+        # DETECTAR TIRADAS DE DADOS antes de enviar al GameAPI
+        roll_intent = self.dice_roller.detect_roll_intent(message_text)
+        if roll_intent:
+            logger.info(f"[ConversationHandler] Detectada tirada de dados: {roll_intent}")
+            roll_result = self.dice_roller.process_roll(user_id, roll_intent, message_text)
+            if roll_result.get('success'):
+                await self._broadcast_to_party(
+                    context=context,
+                    chat_id=chat_id,
+                    message=roll_result['message'],
+                    acting_player_name=player.get('name', 'Aventurero')
+                )
+                return  # No enviar al GameAPI, ya procesamos la tirada
 
         try:
             # Usar caso de uso para procesar la acción
