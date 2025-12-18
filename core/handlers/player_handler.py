@@ -164,5 +164,5 @@ def register_player_handlers(application, campaign_manager):
     register_createcharacter_conversation(application, campaign_manager)
 
     logger.info(
-        "[PlayerHandler] Comandos /start, /createcharacter, /join, /status, /progress y /scene registrados."
+        "[PlayerHandler] Comandos /start, /createcharacter, /join, /status y /progress registrados."
     )
