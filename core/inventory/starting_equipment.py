@@ -86,7 +86,7 @@ BACKGROUND_ITEMS: Dict[str, List[str]] = {
     "Charlatan": ["Ropa fina", "Kit de disfraz", "Herramientas de falsificacion"],
 }
 
-# Items SIEMPRE incluidos (por peticion del usuario)
+# Items SIEMPRE incluidos
 UNIVERSAL_ITEMS = ["Cuerda (50 pies)", "Antorcha (x5)"]
 
 
@@ -97,48 +97,32 @@ def get_starting_equipment(
 ) -> Dict[str, Any]:
     """
     Genera el equipamiento inicial para un personaje.
-    
-    Args:
-        character_class: Clase del personaje (Fighter, Wizard, etc.)
-        background: Trasfondo del personaje (opcional)
-        level: Nivel del personaje (para oro inicial)
-    
-    Returns:
-        Dict con weapons, armor, equipment, inventory, gold
     """
-    # Obtener equipamiento de clase
     class_eq = CLASS_EQUIPMENT.get(character_class, CLASS_EQUIPMENT.get("Fighter"))
     
-    # Construir inventario
     equipment = {
         "weapons": class_eq.get("weapons", []).copy(),
         "armor": class_eq.get("armor"),
         "shield": "Escudo" if "Escudo" in class_eq.get("weapons", []) else None,
     }
     
-    # Remover escudo de weapons si esta ahi (va en slot separado)
     if "Escudo" in equipment["weapons"]:
         equipment["weapons"].remove("Escudo")
     
-    # Items de clase
     inventory = class_eq.get("items", []).copy()
     
-    # Agregar items de trasfondo
     if background and background in BACKGROUND_ITEMS:
         for item in BACKGROUND_ITEMS[background]:
             if item not in inventory:
                 inventory.append(item)
     
-    # SIEMPRE agregar cuerda y antorcha
     for universal_item in UNIVERSAL_ITEMS:
         if universal_item not in inventory:
             inventory.append(universal_item)
     
-    # Raciones basicas
     inventory.append("Raciones (5 dias)")
     inventory.append("Odre de agua")
     
-    # Oro inicial basado en clase y nivel
     gold = calculate_starting_gold(character_class, level)
     
     return {
@@ -151,34 +135,23 @@ def get_starting_equipment(
 def calculate_starting_gold(character_class: str, level: int = 1) -> int:
     """Calcula el oro inicial basado en clase."""
     base_gold = {
-        "Fighter": 125,
-        "Wizard": 100,
-        "Rogue": 100,
-        "Cleric": 125,
-        "Ranger": 125,
-        "Barbarian": 50,
-        "Bard": 125,
-        "Paladin": 125,
-        "Monk": 25,
-        "Druid": 50,
-        "Sorcerer": 75,
-        "Warlock": 100,
+        "Fighter": 125, "Wizard": 100, "Rogue": 100, "Cleric": 125,
+        "Ranger": 125, "Barbarian": 50, "Bard": 125, "Paladin": 125,
+        "Monk": 25, "Druid": 50, "Sorcerer": 75, "Warlock": 100,
     }
     return base_gold.get(character_class, 100)
 
 
 def format_inventory_display(player_data: Dict) -> str:
-    """
-    Formatea el inventario del jugador para mostrar en Telegram.
-    """
+    """Formatea el inventario del jugador para mostrar en Telegram."""
     equipment = player_data.get("equipment", {})
     inventory = player_data.get("inventory", [])
     gold = player_data.get("gold", 0)
     
-    lines = ["ðŸŽ’ *Inventario*\n"]
+    lines = []
+    lines.append("*Inventario*\n")
     
-    # Equipamiento actual
-    lines.append("âš”ï¸ *Equipado:*")
+    lines.append("*Equipado:*")
     
     weapons = equipment.get("weapons", [])
     if weapons:
@@ -192,13 +165,11 @@ def format_inventory_display(player_data: Dict) -> str:
     if shield:
         lines.append(f"  Escudo: {shield}")
     
-    # Objetos en inventario
     if inventory:
-        lines.append("\nðŸ“¦ *Objetos:*")
+        lines.append("\n*Objetos:*")
         for item in inventory:
-            lines.append(f"  â€¢ {item}")
+            lines.append(f"  - {item}")
     
-    # Oro
-    lines.append(f"\nðŸ’° *Oro:* {gold} mo")
+    lines.append(f"\n*Oro:* {gold} mo")
     
     return "\n".join(lines)
