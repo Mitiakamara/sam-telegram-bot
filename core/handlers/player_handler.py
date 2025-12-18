@@ -151,20 +151,14 @@ def register_player_handlers(application, campaign_manager):
         )
 
     # ------------------------------------------------------------
-    # /scene
-    # ------------------------------------------------------------
-    async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        current_scene = campaign_manager.state.get("current_scene", "No hay escena activa.")
-        await update.message.reply_text(f"🎭 Escena actual:\n{current_scene}")
-
-    # ------------------------------------------------------------
     # REGISTRO DE HANDLERS
+    # NOTA: /scene está manejado por narrative_handler.py con lógica completa
     # ------------------------------------------------------------
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("join", join))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("progress", progress))
-    application.add_handler(CommandHandler("scene", scene))
+    # /scene removido - manejado por narrative_handler.py
 
     # conversación interactiva de creación de personaje
     register_createcharacter_conversation(application, campaign_manager)
