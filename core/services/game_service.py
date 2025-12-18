@@ -80,6 +80,14 @@ class GameService:
             }
             logger.debug(f"[GameService] Enviando datos del personaje: {character_data.get('class')}")
 
+        # DEBUG: Log del payload completo
+        import json as json_lib
+        try:
+            payload_str = json_lib.dumps(payload, default=str, ensure_ascii=False)
+            logger.info(f"[GameService] Payload ({len(payload_str)} chars): {payload_str[:1000]}")
+        except Exception as log_err:
+            logger.warning(f"[GameService] No se pudo serializar payload: {log_err}")
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 response = await client.post(endpoint, json=payload)
