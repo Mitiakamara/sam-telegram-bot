@@ -3,10 +3,6 @@ Conversational Message Handler
 Handles free-form player messages (non-commands) and routes them to GameAPI
 for natural language interpretation and narrative response.
 Supports multi-player broadcasting in group chats (2-8 players).
-
-Ahora incluye deteccion conversacional de:
-- Tiradas de dados ("lanzo 1d20", "tiro percepcion")
-- Inventario ("mi inventario", "uso pocion", "agarro espada")
 """
 import logging
 from telegram import Update
@@ -15,10 +11,47 @@ from core.services.game_service import GameService
 from core.campaign.campaign_manager import CampaignManager
 from core.use_cases.process_player_action import ProcessPlayerActionUseCase
 from core.exceptions import PlayerNotFoundError, GameAPIError
-from core.dice_roller.conversational_roller import ConversationalRoller
-from core.inventory.inventory_manager import InventoryManager
 
 logger = logging.getLogger("ConversationHandler")
+
+# Limite de caracteres de Telegram
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+
+
+def split_long_message(text: str, max_length: int = TELEGRAM_MAX_MESSAGE_LENGTH) -> list[str]:
+    """
+    Divide un mensaje largo en partes mas pequenas respetando el limite de Telegram.
+    """
+    if len(text) <= max_length:
+        return [text]
+    
+    messages = []
+    remaining = text
+    
+    while len(remaining) > max_length:
+        chunk = remaining[:max_length]
+        
+        last_paragraph = chunk.rfind("\n\n")
+        if last_paragraph > max_length // 2:
+            cut_point = last_paragraph
+        else:
+            last_newline = chunk.rfind("\n")
+            if last_newline > max_length // 2:
+                cut_point = last_newline
+            else:
+                last_space = chunk.rfind(" ")
+                if last_space > max_length // 2:
+                    cut_point = last_space
+                else:
+                    cut_point = max_length
+        
+        messages.append(remaining[:cut_point].strip())
+        remaining = remaining[cut_point:].strip()
+    
+    if remaining:
+        messages.append(remaining)
+    
+    return messages
 
 
 class ConversationHandler:
@@ -27,8 +60,7 @@ class ConversationHandler:
     and routes them to GameAPI for AI interpretation.
     Supports multi-player broadcasting in group chats.
     
-    Detecta patrones conversacionales de dados e inventario antes
-    de enviar al GameAPI.
+    Ahora usa casos de uso para separar lógica de negocio.
     """
 
     def __init__(
@@ -36,19 +68,26 @@ class ConversationHandler:
         process_action_use_case: ProcessPlayerActionUseCase,
         campaign_manager: CampaignManager,
     ):
+        """
+        Inicializa el handler con el caso de uso.
+        
+        Args:
+            process_action_use_case: Caso de uso para procesar acciones
+            campaign_manager: Manager de campaña (para broadcasting)
+        """
         self.process_action_use_case = process_action_use_case
         self.campaign_manager = campaign_manager
-        
-        # Inicializar sistemas conversacionales
-        self.dice_roller = ConversationalRoller(campaign_manager)
-        self.inventory_manager = InventoryManager(campaign_manager)
 
     async def _get_party_members_in_chat(self, chat_id: int) -> list:
-        """Gets all party members who are in the same chat."""
+        """
+        Gets all party members who are in the same chat.
+        Returns list of (telegram_id, player_name) tuples.
+        """
         active_party = self.campaign_manager.get_active_party()
         party_members = []
         
         for telegram_id in active_party:
+            # Check if player is in this chat
             player_chat_id = self.campaign_manager.get_party_chat_id(telegram_id)
             if player_chat_id == chat_id or player_chat_id is None:
                 player = self.campaign_manager.get_player_by_telegram_id(telegram_id)
@@ -57,6 +96,41 @@ class ConversationHandler:
         
         return party_members
 
+    async def _send_message_with_split(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        message: str
+    ) -> bool:
+        """Envia un mensaje, dividiendolo si excede el limite de Telegram."""
+        parts = split_long_message(message)
+        
+        for i, part in enumerate(parts):
+            try:
+                if len(parts) > 1 and i < len(parts) - 1:
+                    part = part + "\n\n_(continua...)_"
+                elif len(parts) > 1 and i > 0:
+                    part = "_(continuacion)_\n\n" + part
+                
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=part,
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.warning(f"Error enviando mensaje con Markdown: {e}, intentando sin formato")
+                try:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=part
+                    )
+                except Exception as e2:
+                    logger.error(f"Error enviando mensaje: {e2}")
+                    return False
+        
+        return True
+
+
     async def _broadcast_to_party(
         self, 
         context: ContextTypes.DEFAULT_TYPE, 
@@ -64,157 +138,122 @@ class ConversationHandler:
         message: str,
         acting_player_name: str = None
     ):
-        """Broadcasts a message to all party members in the chat."""
+        """
+        Broadcasts a message to all party members in the chat.
+        In group chats, sends to the chat (all members see it automatically).
+        In private chats, sends to individual players.
+        """
         try:
             chat = await context.bot.get_chat(chat_id)
             
+            # Check if it's a group chat
             if chat.type in ["group", "supergroup"]:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=message,
-                    parse_mode="Markdown"
-                )
+                # In group chat, just send to the group (all members see it)
+                await self._send_message_with_split(context, chat_id, message)
+                logger.debug(f"[ConversationHandler] Broadcasted to group chat {chat_id}")
             else:
+                # Private chat - broadcast to all party members individually
+                # Get all unique chat IDs where party members are
                 party_chat_ids = self.campaign_manager.get_all_party_chat_ids()
                 
                 if not party_chat_ids:
+                    # Fallback: send to current chat
                     party_chat_ids = [chat_id]
                 
                 for target_chat_id in party_chat_ids:
                     try:
-                        await context.bot.send_message(
-                            chat_id=target_chat_id,
-                            text=message,
-                            parse_mode="Markdown"
-                        )
+                        await self._send_message_with_split(context, target_chat_id, message)
                     except Exception as e:
                         logger.warning(f"Could not send message to chat {target_chat_id}: {e}")
         except Exception as e:
             logger.error(f"Error broadcasting message: {e}")
+            # Fallback: send to current chat
             try:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=message,
-                    parse_mode="Markdown"
-                )
+                await self._send_message_with_split(context, chat_id, message)
             except Exception as fallback_error:
                 logger.error(f"Fallback broadcast also failed: {fallback_error}")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
         Processes a free-form message from a player.
-        Detecta patrones de dados e inventario antes de enviar al GameAPI.
+        Routes it to GameAPI for natural language interpretation.
+        Broadcasts response to all party members in the chat.
         """
         user = update.effective_user
         user_id = user.id
         chat_id = update.effective_chat.id
         message_text = update.message.text.strip()
 
+        # Skip if message is too short or empty
         if len(message_text) < 2:
             return
 
-        # Verificar si esta en creacion de personaje
+        # IMPORTANTE: Verificar PRIMERO si el usuario está en una conversación activa
+        # python-telegram-bot almacena el estado de ConversationHandler en user_data
+        # Si hay datos de creación de personaje, significa que está en una conversación activa
         if "character_data" in context.user_data:
-            logger.info(f"[ConversationHandler] Usuario {user_id} en creacion de personaje, ignorando")
+            logger.info(f"[ConversationHandler] Usuario {user_id} tiene character_data activo, ignorando mensaje '{message_text[:30]}...' durante creación de personaje")
             return
         
+        # Verificar también por el nombre del ConversationHandler (por si acaso)
         if "createcharacter_conversation" in context.user_data:
+            logger.info(f"[ConversationHandler] Usuario {user_id} tiene createcharacter_conversation activo, ignorando mensaje")
             return
 
-        # Verificar que tiene personaje
+        # Get player character from campaign
         player = self.campaign_manager.get_player_by_telegram_id(user_id)
         if not player:
             await update.message.reply_text(
-                "No tienes un personaje creado. Usa /createcharacter primero."
+                "⚠️ No tienes un personaje creado. Usa /createcharacter primero."
             )
             return
 
-        player_name = player.get("name", user.first_name)
-
-        # === 1. DETECTAR TIRADA DE DADOS ===
-        roll_intent = self.dice_roller.detect_roll_intent(message_text)
-        if roll_intent:
-            logger.info(f"[ConversationHandler] Detectada tirada de dados: {roll_intent}")
-            result = self.dice_roller.process_roll(user_id, roll_intent, message_text)
-            
-            if result.get("success"):
-                await self._broadcast_to_party(
-                    context=context,
-                    chat_id=chat_id,
-                    message=result.get("message", "Tirada realizada"),
-                    acting_player_name=player_name
-                )
-                return
-
-        # === 2. DETECTAR ACCION DE INVENTARIO ===
-        inventory_intent = self.inventory_manager.detect_inventory_intent(message_text)
-        if inventory_intent:
-            action_type, item = inventory_intent
-            logger.info(f"[ConversationHandler] Detectada accion de inventario: {action_type}, item={item}")
-            
-            result = self.inventory_manager.process_inventory_action(user_id, action_type, item)
-            
-            if result.get("success"):
-                if result.get("is_display"):
-                    # Solo mostrar inventario, sin enviar al GameAPI
-                    await update.message.reply_text(
-                        result.get("message", ""),
-                        parse_mode="Markdown"
-                    )
-                    return
-                elif result.get("send_to_gameapi"):
-                    # Continuar al GameAPI con la narrativa como contexto
-                    pass
-                else:
-                    # Mostrar narrativa local
-                    narrative = result.get("narrative", result.get("message", ""))
-                    response = f"*{player_name}*: {message_text}\n\n{narrative}"
-                    await self._broadcast_to_party(
-                        context=context,
-                        chat_id=chat_id,
-                        message=response,
-                        acting_player_name=player_name
-                    )
-                    return
-            else:
-                # Error de inventario
-                await update.message.reply_text(result.get("message", "Error con inventario"))
-                return
-
-        # === 3. ENVIAR AL GAMEAPI PARA NARRATIVA COMPLETA ===
+        # Show typing indicator to all in chat
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
         try:
+            # Usar caso de uso para procesar la acción
+            # El caso de uso maneja toda la lógica de negocio
             result = await self.process_action_use_case.execute(
                 player_id=user_id, action_text=message_text
             )
 
+            # Construir respuesta con nombre del jugador
+            player_name = result.get("player_name", user.first_name)
             narrative = result.get("narrative", "")
             event = result.get("event")
 
             response_text = f"*{player_name}*: {message_text}\n\n"
             response_text += narrative
 
+            # El evento ya está procesado en el caso de uso, solo mostrarlo si existe
             if event:
                 event_title = event.get("event_title", "Evento")
                 event_narration = event.get("event_narration", "")
                 if event_narration:
-                    response_text += f"\n\n *{event_title}*\n{event_narration}"
+                    response_text += f"\n\n🔮 *{event_title}*\n{event_narration}"
 
         except PlayerNotFoundError:
             await update.message.reply_text(
-                "No tienes un personaje creado. Usa /createcharacter primero."
+                "⚠️ No tienes un personaje creado. Usa /createcharacter primero."
             )
             return
         except GameAPIError as e:
             logger.error(f"[ConversationHandler] Error del GameAPI: {e}")
-            await update.message.reply_text(f"Error procesando accion: {str(e)}")
+            await update.message.reply_text(
+                f"⚠️ Error procesando acción: {str(e)}"
+            )
             return
         except Exception as e:
-            logger.exception(f"[ConversationHandler] Error inesperado: {e}")
-            await update.message.reply_text("Error inesperado. Intenta mas tarde.")
+            logger.exception(
+                f"[ConversationHandler] Error inesperado procesando acción: {e}"
+            )
+            await update.message.reply_text(
+                "⚠️ Error inesperado procesando acción. Intenta más tarde."
+            )
             return
 
+        # Broadcast response to all party members in the chat
         await self._broadcast_to_party(
             context=context,
             chat_id=chat_id,
@@ -222,16 +261,29 @@ class ConversationHandler:
             acting_player_name=player_name
         )
 
-        logger.info(f"[ConversationHandler] Processed action for {player_name} in chat {chat_id}: {message_text[:50]}...")
+        logger.info(
+            f"[ConversationHandler] Processed action for {result.get('player_name', 'Unknown')} in chat {chat_id}: {message_text[:50]}..."
+        )
 
     def register_handler(self, application):
-        """Registers the conversation handler with the Telegram application."""
+        """
+        Registers the conversation handler with the Telegram application.
+        This handler processes all text messages that are NOT commands.
+        
+        IMPORTANTE: Este handler debe tener menor prioridad que los ConversationHandler
+        (como createcharacter). Los ConversationHandler se registran primero y tienen
+        prioridad automática cuando están activos.
+        """
+        # Handler for text messages that are not commands
+        # Filters.TEXT matches text, ~filters.COMMAND excludes commands
+        # Usar group=-1 para que tenga menor prioridad que ConversationHandler activos
         handler = MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             self.handle_message
         )
+        # Agregar con group=-1 para que ConversationHandler activos tengan prioridad
         application.add_handler(handler, group=-1)
-        logger.info("[ConversationHandler] Handler registered with dice and inventory support.")
+        logger.info("[ConversationHandler] Conversational message handler registered with group=-1 (lower priority).")
 
 
 def register_conversation_handler(
@@ -241,8 +293,19 @@ def register_conversation_handler(
     game_service: GameService = None,
     story_director=None,
 ):
-    """Convenience function to register the conversation handler."""
+    """
+    Convenience function to register the conversation handler.
+    
+    Args:
+        application: Telegram application instance
+        process_action_use_case: Caso de uso para procesar acciones (opcional)
+        campaign_manager: CampaignManager instance (opcional, obtenido de bot_data si no se proporciona)
+        game_service: GameService instance (opcional, para crear caso de uso si no se proporciona)
+        story_director: StoryDirector instance (opcional, para crear caso de uso si no se proporciona)
+    """
+    # Si no se proporciona el caso de uso, crearlo
     if process_action_use_case is None:
+        # Obtener servicios de bot_data si no se proporcionan
         if campaign_manager is None:
             campaign_manager = application.bot_data.get("campaign_manager")
         if game_service is None:
@@ -251,19 +314,27 @@ def register_conversation_handler(
             story_director = application.bot_data.get("story_director")
 
         if not all([game_service, story_director]):
-            logger.warning("[ConversationHandler] Missing required services.")
+            logger.warning(
+                "[ConversationHandler] No se pueden crear servicios necesarios. "
+                "Asegúrate de que estén en bot_data o pásalos como parámetros."
+            )
             return
 
+        # Crear DirectorLink
         from core.story_director.director_link import DirectorLink
+
         director_link = DirectorLink(story_director)
 
+        # Crear caso de uso
         from core.use_cases.process_player_action import ProcessPlayerActionUseCase
+
         process_action_use_case = ProcessPlayerActionUseCase(
             game_service=game_service,
             story_director=story_director,
             director_link=director_link,
         )
 
+    # Obtener campaign_manager si no se proporciona
     if campaign_manager is None:
         campaign_manager = application.bot_data.get("campaign_manager")
 
