@@ -58,17 +58,45 @@ class CampaignManager:
                         self.state["current_scene"] = loaded_state.get("active_scene", "Oasis perdido")
                         self.logger.info("[CampaignManager] Migrated old campaign state format")
                     
-                    # Preserve players if they exist
+                    # Preserve ALL other keys from loaded state (including adventure data)
+                    for key, value in loaded_state.items():
+                        if key not in ["campaign_id", "campaign_title", "current_chapter", "active_scene"]:
+                            # Preserve all other keys, including adventure_data, current_scene_id, etc.
+                            self.state[key] = value
+                    
+                    # Explicitly preserve these critical keys if they exist
                     if "players" in loaded_state and isinstance(loaded_state["players"], dict):
                         self.state["players"] = loaded_state["players"]
                     
-                    # Preserve active_party if it exists
                     if "active_party" in loaded_state:
                         self.state["active_party"] = loaded_state["active_party"]
                     
-                    # Preserve party_chats if it exists
                     if "party_chats" in loaded_state:
                         self.state["party_chats"] = loaded_state["party_chats"]
+                    
+                    if "adventure_data" in loaded_state:
+                        self.state["adventure_data"] = loaded_state["adventure_data"]
+                    
+                    if "current_scene_id" in loaded_state:
+                        self.state["current_scene_id"] = loaded_state["current_scene_id"]
+                    
+                    if "adventure_scenes" in loaded_state:
+                        self.state["adventure_scenes"] = loaded_state["adventure_scenes"]
+                    
+                    if "campaign_title" in loaded_state:
+                        self.state["campaign_title"] = loaded_state["campaign_title"]
+                    
+                    # Logging para verificar que adventure_data se cargó
+                    loaded_adventure_data = self.state.get("adventure_data")
+                    loaded_scene_id = self.state.get("current_scene_id")
+                    self.logger.info(f"[CampaignManager] Estado cargado. adventure_data presente: {loaded_adventure_data is not None}, current_scene_id: {loaded_scene_id}")
+                    if loaded_adventure_data:
+                        # Verificar estructura
+                        if isinstance(loaded_adventure_data, dict) and "scenes" in loaded_adventure_data:
+                            scene_count = len(loaded_adventure_data.get("scenes", []))
+                            self.logger.info(f"[CampaignManager] adventure_data tiene estructura válida con {scene_count} escenas")
+                        else:
+                            self.logger.warning(f"[CampaignManager] adventure_data no tiene estructura válida. Tipo: {type(loaded_adventure_data)}, keys: {list(loaded_adventure_data.keys()) if isinstance(loaded_adventure_data, dict) else 'N/A'}")
                     
             except Exception as e:
                 self.logger.warning("[CampaignManager] No pude leer el JSON, uso estado por defecto: %s", e)
@@ -82,13 +110,92 @@ class CampaignManager:
         self.state.setdefault("current_scene", "Oasis perdido")
         self.state.setdefault("active_party", [])
         self.state.setdefault("party_chats", {})
+        
+        # CORRECCIÓN CRÍTICA: Si current_scene es un nombre de archivo JSON, corregirlo
+        current_scene = self.state.get("current_scene", "")
+        if current_scene and current_scene.endswith(".json"):
+            self.logger.warning(f"[CampaignManager] current_scene tiene nombre de archivo JSON: '{current_scene}'. Corrigiendo...")
+            # Si hay adventure_data, usar el título de la escena actual
+            adventure_data = self.state.get("adventure_data")
+            current_scene_id = self.state.get("current_scene_id")
+            if adventure_data and current_scene_id:
+                try:
+                    from core.adventure.adventure_loader import AdventureLoader
+                    loader = AdventureLoader()
+                    scene = loader.find_scene_by_id(adventure_data, current_scene_id)
+                    if scene:
+                        self.state["current_scene"] = scene.get("title", "Escena actual")
+                        self.logger.info(f"[CampaignManager] current_scene corregido a: {self.state['current_scene']}")
+                    else:
+                        self.state["current_scene"] = "Escena actual"
+                        self.logger.warning(f"[CampaignManager] No se encontró escena con ID '{current_scene_id}', usando 'Escena actual'")
+                except Exception as e:
+                    self.logger.error(f"[CampaignManager] Error al corregir current_scene: {e}")
+                    self.state["current_scene"] = "Escena actual"
+            else:
+                # Fallback: usar un nombre genérico
+                self.state["current_scene"] = "Escena actual"
+                self.logger.info(f"[CampaignManager] current_scene corregido a: Escena actual (no hay adventure_data)")
+            # Guardar el estado corregido
+            self._save_state()
+        
+        # VERIFICACIÓN ADICIONAL: Si hay campaign_name pero no adventure_data, intentar recargar
+        campaign_name = self.state.get("campaign_name", "")
+        adventure_data = self.state.get("adventure_data")
+        if campaign_name and campaign_name != "TheGeniesWishes" and not adventure_data:
+            self.logger.warning(f"[CampaignManager] campaign_name='{campaign_name}' pero adventure_data es None. Esto sugiere que el estado no se guardó correctamente.")
+            # Intentar recargar la aventura desde el StoryDirector (si está disponible)
+            # Nota: No podemos acceder a StoryDirector desde aquí, así que solo logueamos
+            self.logger.info(f"[CampaignManager] Se recomienda ejecutar /loadcampaign {campaign_name} para recargar la aventura")
 
     def _save_state(self) -> None:
         try:
+            # Verificar que adventure_data está presente antes de guardar
+            has_adventure_data = "adventure_data" in self.state and self.state.get("adventure_data") is not None
+            current_scene_id = self.state.get("current_scene_id")
+            campaign_name = self.state.get("campaign_name", "")
+            
+            if has_adventure_data:
+                adventure_data = self.state.get("adventure_data")
+                if isinstance(adventure_data, dict):
+                    scene_count = len(adventure_data.get("scenes", []))
+                    self.logger.info(f"[CampaignManager] _save_state - Guardando estado con adventure_data ({scene_count} escenas), current_scene_id: {current_scene_id}, campaign_name: {campaign_name}")
+                else:
+                    self.logger.warning(f"[CampaignManager] _save_state - adventure_data no es un dict: {type(adventure_data)}")
+            else:
+                self.logger.warning(f"[CampaignManager] _save_state - adventure_data NO está presente. campaign_name: {campaign_name}, current_scene_id: {current_scene_id}")
+            
+            # Intentar serializar para verificar que no hay problemas
+            try:
+                json_str = json.dumps(self.state, ensure_ascii=False, indent=2)
+                json_size = len(json_str)
+                self.logger.debug(f"[CampaignManager] Estado serializado correctamente. Tamaño: {json_size} bytes")
+            except Exception as e:
+                self.logger.error(f"[CampaignManager] Error al serializar estado: {e}", exc_info=True)
+                raise
+            
             with open(self.state_path, "w", encoding="utf-8") as f:
                 json.dump(self.state, f, ensure_ascii=False, indent=2)
+            
+            # Verificar que se guardó correctamente leyendo el archivo
+            if has_adventure_data:
+                try:
+                    with open(self.state_path, "r", encoding="utf-8") as f:
+                        saved_data = json.load(f)
+                        saved_has_adventure = "adventure_data" in saved_data and saved_data.get("adventure_data") is not None
+                        if saved_has_adventure:
+                            saved_adventure = saved_data.get("adventure_data")
+                            if isinstance(saved_adventure, dict):
+                                saved_scene_count = len(saved_adventure.get("scenes", []))
+                                self.logger.info(f"[CampaignManager] Estado guardado y verificado. adventure_data en archivo: True ({saved_scene_count} escenas), current_scene_id guardado: {saved_data.get('current_scene_id')}")
+                            else:
+                                self.logger.warning(f"[CampaignManager] adventure_data guardado pero no es un dict: {type(saved_adventure)}")
+                        else:
+                            self.logger.error(f"[CampaignManager] ERROR: adventure_data NO se guardó en el archivo aunque estaba presente antes de guardar!")
+                except Exception as e:
+                    self.logger.warning(f"[CampaignManager] No se pudo verificar el archivo guardado: {e}", exc_info=True)
         except Exception as e:
-            self.logger.error("[CampaignManager] Error guardando estado: %s", e)
+            self.logger.error("[CampaignManager] Error guardando estado: %s", e, exc_info=True)
 
     # ---------------------------------------------------------
     # API pública que usan los handlers
@@ -246,15 +353,66 @@ class CampaignManager:
         """
         Carga el estado desde un diccionario.
         Útil para restaurar desde StoryDirector.
+        IMPORTANTE: Sobrescribe completamente el estado, incluyendo adventure_data.
         """
         if data:
+            # IMPORTANTE: Actualizar el estado completo primero
             self.state.update(data)
+            
+            # Preservar explícitamente adventure_data y campos relacionados
+            # Incluso si son None, para asegurar sincronización
+            if "adventure_data" in data:
+                self.state["adventure_data"] = data["adventure_data"]
+            if "current_scene_id" in data:
+                self.state["current_scene_id"] = data["current_scene_id"]
+            if "adventure_scenes" in data:
+                self.state["adventure_scenes"] = data["adventure_scenes"]
+            if "campaign_title" in data:
+                self.state["campaign_title"] = data["campaign_title"]
+            
+            # Logging detallado
+            adventure_data = self.state.get("adventure_data")
+            current_scene_id = self.state.get("current_scene_id")
+            campaign_name = self.state.get("campaign_name", "")
+            
+            if adventure_data:
+                if isinstance(adventure_data, dict) and "scenes" in adventure_data:
+                    scene_count = len(adventure_data.get("scenes", []))
+                    self.logger.info(f"[CampaignManager] Estado cargado desde diccionario. adventure_data: True ({scene_count} escenas), current_scene_id: {current_scene_id}, campaign_name: {campaign_name}")
+                else:
+                    self.logger.warning(f"[CampaignManager] adventure_data cargado pero no tiene estructura válida. Tipo: {type(adventure_data)}")
+            else:
+                self.logger.warning(f"[CampaignManager] Estado cargado desde diccionario. adventure_data: None, current_scene_id: {current_scene_id}, campaign_name: {campaign_name}")
+                if campaign_name and campaign_name not in ["TheGeniesWishes", "The Genie's Wishes – Chapter 1: Cold Open"]:
+                    self.logger.warning(f"[CampaignManager] ADVERTENCIA: campaign_name='{campaign_name}' pero adventure_data es None. El estado podría estar desincronizado.")
+            
             self._save_state()
-            self.logger.info("[CampaignManager] Estado cargado desde diccionario.")
 
     def to_dict(self) -> Dict[str, Any]:
         """
         Exporta el estado como diccionario.
         Útil para guardar desde StoryDirector.
+        Asegura que todos los campos, incluyendo adventure_data, se incluyan.
         """
-        return self.state.copy()
+        state_copy = self.state.copy()
+        # Asegurar que adventure_data y campos relacionados se incluyan
+        if "adventure_data" in self.state:
+            state_copy["adventure_data"] = self.state["adventure_data"]
+        if "current_scene_id" in self.state:
+            state_copy["current_scene_id"] = self.state["current_scene_id"]
+        if "adventure_scenes" in self.state:
+            state_copy["adventure_scenes"] = self.state["adventure_scenes"]
+        if "campaign_title" in self.state:
+            state_copy["campaign_title"] = self.state["campaign_title"]
+        has_adventure = 'adventure_data' in state_copy
+        scene_id = state_copy.get('current_scene_id')
+        if has_adventure:
+            adventure = state_copy.get('adventure_data')
+            if isinstance(adventure, dict):
+                scene_count = len(adventure.get('scenes', []))
+                self.logger.info(f"[CampaignManager] to_dict() - adventure_data presente: True ({scene_count} escenas), current_scene_id: {scene_id}")
+            else:
+                self.logger.warning(f"[CampaignManager] to_dict() - adventure_data presente pero no es dict: {type(adventure)}")
+        else:
+            self.logger.warning(f"[CampaignManager] to_dict() - adventure_data NO presente, current_scene_id: {scene_id}")
+        return state_copy
