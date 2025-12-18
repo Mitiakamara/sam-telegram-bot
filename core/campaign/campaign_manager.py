@@ -349,6 +349,43 @@ class CampaignManager:
             "status": "active"
         }
 
+    
+    def update_player_field(self, telegram_id: int, field: str, value: Any) -> bool:
+        """
+        Actualiza un campo especifico de un jugador.
+        
+        Args:
+            telegram_id: ID de Telegram del jugador
+            field: Nombre del campo a actualizar
+            value: Nuevo valor
+        
+        Returns:
+            True si se actualizo, False si no se encontro el jugador
+        """
+        players = self.state.get("players", {})
+        player_key = str(telegram_id)
+        
+        if player_key in players:
+            players[player_key][field] = value
+            self._save_state()
+            self.logger.info(f"[CampaignManager] Campo '{field}' actualizado para jugador {telegram_id}")
+            return True
+        
+        # Buscar por telegram_id dentro del objeto
+        for key, player in players.items():
+            if player.get("telegram_id") == telegram_id:
+                player[field] = value
+                self._save_state()
+                self.logger.info(f"[CampaignManager] Campo '{field}' actualizado para jugador {telegram_id}")
+                return True
+        
+        return False
+
+    def get_player_by_key(self, player_key: str) -> Optional[Dict[str, Any]]:
+        """Obtiene un jugador por su clave en el diccionario."""
+        players = self.state.get("players", {})
+        return players.get(player_key)
+
     def load_from_dict(self, data: Dict[str, Any]) -> None:
         """
         Carga el estado desde un diccionario.

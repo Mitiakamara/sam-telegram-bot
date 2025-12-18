@@ -13,6 +13,7 @@ logger = logging.getLogger("CreateCharacterHandler")
 
 from core.character_builder.builder_interactive import CharacterBuilderInteractive
 from core.character_builder.point_buy_system import PointBuySystem, ATTRIBUTES as ATTRIBUTE_NAMES
+from core.inventory.starting_equipment import get_starting_equipment
 
 # Estados de conversación
 (
@@ -358,6 +359,17 @@ def register_createcharacter_conversation(application, campaign_manager):
         # Add telegram_id to character
         character["telegram_id"] = user_id
         
+        # Agregar equipamiento inicial segun clase y trasfondo
+        starting_eq = get_starting_equipment(
+            character_class=character.get("class", "Fighter"),
+            background=character.get("background", ""),
+            level=character.get("level", 1)
+        )
+        character["equipment"] = starting_eq.get("equipment", {})
+        character["inventory"] = starting_eq.get("inventory", [])
+        character["gold"] = starting_eq.get("gold", 100)
+        logger.info(f"[CreateCharacterHandler] Equipamiento inicial agregado: {len(character['inventory'])} items")
+        
         # Guardar en campaign_manager
         campaign_manager.add_player(
             telegram_id=user_id,
@@ -396,6 +408,19 @@ def register_createcharacter_conversation(application, campaign_manager):
         if background_feature:
             summary += f"\n\n🎭 Característica de trasfondo: *{background_feature['name']}*\n"
             summary += f"{background_feature['description']}"
+        
+        # Agregar info de equipamiento al summary
+        equipment = character.get('equipment', {})
+        inventory = character.get('inventory', [])
+        gold = character.get('gold', 0)
+        
+        summary += f'\n\n *Equipamiento:*'
+        if equipment.get('weapons'):
+            summary += f'\n  Armas: {", ".join(equipment["weapons"])}'
+        if equipment.get('armor'):
+            summary += f'\n  Armadura: {equipment["armor"]}'
+        summary += f'\n\n *Inventario:* {len(inventory)} objetos'
+        summary += f'\n *Oro:* {gold} mo'
         
         await update.message.reply_text(summary, parse_mode="Markdown")
         
