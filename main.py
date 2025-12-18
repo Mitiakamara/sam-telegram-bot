@@ -15,6 +15,8 @@ from core.handlers.conversation_handler import register_conversation_handler
 from core.story_director.story_director import StoryDirector
 # importa GameService
 from core.services.game_service import GameService
+# importa ServiceContainer para inyección de dependencias
+from core.container.service_container import ServiceContainer
 
 # ---------------------------------------------------------------------
 # LOGGING
@@ -34,27 +36,24 @@ def main() -> None:
     if not bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN no está definido en el entorno.")
 
-    # instancia única del estado de campaña
-    campaign_manager = CampaignManager()
-    
-    # instancia única del StoryDirector (orquesta narrativa, escenas, eventos)
-    story_director = StoryDirector()
-    
-    # instancia única del GameService (conecta con sam-gameapi)
-    game_service = GameService()
-    
     logger.info("🤖 Iniciando SAM The Dungeon Bot...")
+
+    # Crear ServiceContainer para gestión centralizada de servicios
+    container = ServiceContainer()
+    
+    logger.info("✅ ServiceContainer creado - Servicios disponibles bajo demanda")
 
     # construimos la aplicación de telegram
     application = ApplicationBuilder().token(bot_token).build()
     
-    # Guardamos servicios en bot_data para que los handlers puedan accederlos
-    application.bot_data["story_director"] = story_director
-    application.bot_data["game_service"] = game_service
-    application.bot_data["campaign_manager"] = campaign_manager
+    # Guardar container y servicios en bot_data para que los handlers puedan accederlos
+    application.bot_data["container"] = container
+    application.bot_data["story_director"] = container.story_director
+    application.bot_data["game_service"] = container.game_service
+    application.bot_data["campaign_manager"] = container.campaign_manager
 
     # registramos TODOS los comandos de jugador
-    register_player_handlers(application, campaign_manager)
+    register_player_handlers(application, container.campaign_manager)
     
     # registramos handlers narrativos (/scene, /event)
     register_narrative_handlers(application)
@@ -64,7 +63,13 @@ def main() -> None:
     
     # registramos handler conversacional (procesa mensajes libres)
     # IMPORTANTE: Este debe ir DESPUÉS de los command handlers
-    register_conversation_handler(application, game_service, campaign_manager)
+    # Ahora usa casos de uso para separar lógica de negocio
+    register_conversation_handler(
+        application,
+        campaign_manager=container.campaign_manager,
+        game_service=container.game_service,
+        story_director=container.story_director,
+    )
 
     # handler de errores para que no se pierdan en logs
     async def error_handler(update, context) -> None:

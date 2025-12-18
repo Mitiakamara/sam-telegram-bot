@@ -9,6 +9,8 @@ from telegram import Update
 from telegram.ext import MessageHandler, ContextTypes, filters
 from core.services.game_service import GameService
 from core.campaign.campaign_manager import CampaignManager
+from core.use_cases.process_player_action import ProcessPlayerActionUseCase
+from core.exceptions import PlayerNotFoundError, GameAPIError
 
 logger = logging.getLogger("ConversationHandler")
 
@@ -18,10 +20,23 @@ class ConversationHandler:
     Handles conversational gameplay - processes free-form player messages
     and routes them to GameAPI for AI interpretation.
     Supports multi-player broadcasting in group chats.
+    
+    Ahora usa casos de uso para separar lógica de negocio.
     """
 
-    def __init__(self, game_service: GameService, campaign_manager: CampaignManager):
-        self.game_service = game_service
+    def __init__(
+        self,
+        process_action_use_case: ProcessPlayerActionUseCase,
+        campaign_manager: CampaignManager,
+    ):
+        """
+        Inicializa el handler con el caso de uso.
+        
+        Args:
+            process_action_use_case: Caso de uso para procesar acciones
+            campaign_manager: Manager de campaña (para broadcasting)
+        """
+        self.process_action_use_case = process_action_use_case
         self.campaign_manager = campaign_manager
 
     async def _get_party_members_in_chat(self, chat_id: int) -> list:
@@ -119,34 +134,50 @@ class ConversationHandler:
             )
             return
 
-        player_name = player.get("name", user.first_name)
-
         # Show typing indicator to all in chat
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
-        # Process action through GameAPI (AI interprets natural language)
-        result = await self.game_service.process_action(player_name, message_text)
+        try:
+            # Usar caso de uso para procesar la acción
+            # El caso de uso maneja toda la lógica de negocio
+            result = await self.process_action_use_case.execute(
+                player_id=user_id, action_text=message_text
+            )
 
-        if not result.get("success"):
-            error_msg = result.get("error", "Error desconocido")
-            await update.message.reply_text(f"⚠️ {error_msg}")
+            # Construir respuesta con nombre del jugador
+            player_name = result.get("player_name", user.first_name)
+            narrative = result.get("narrative", "")
+            event = result.get("event")
+
+            response_text = f"*{player_name}*: {message_text}\n\n"
+            response_text += narrative
+
+            # El evento ya está procesado en el caso de uso, solo mostrarlo si existe
+            if event:
+                event_title = event.get("event_title", "Evento")
+                event_narration = event.get("event_narration", "")
+                if event_narration:
+                    response_text += f"\n\n🔮 *{event_title}*\n{event_narration}"
+
+        except PlayerNotFoundError:
+            await update.message.reply_text(
+                "⚠️ No tienes un personaje creado. Usa /createcharacter primero."
+            )
             return
-
-        # Get narrative response
-        narrative = result.get("result", "")
-        
-        # Check if a dynamic event was triggered
-        event = result.get("event")
-        
-        # Build response message with player name
-        # Format: "PlayerName: [action description]" followed by narrative
-        response_text = f"*{player_name}*: {message_text}\n\n"
-        response_text += narrative
-        
-        if event:
-            event_title = event.get("event_title", "Evento")
-            event_narration = event.get("event_narration", "")
-            response_text += f"\n\n🔮 *{event_title}*\n{event_narration}"
+        except GameAPIError as e:
+            logger.error(f"[ConversationHandler] Error del GameAPI: {e}")
+            await update.message.reply_text(
+                f"⚠️ Error procesando acción: {str(e)}"
+            )
+            return
+        except Exception as e:
+            logger.exception(
+                f"[ConversationHandler] Error inesperado procesando acción: {e}"
+            )
+            await update.message.reply_text(
+                "⚠️ Error inesperado procesando acción. Intenta más tarde."
+            )
+            return
 
         # Broadcast response to all party members in the chat
         await self._broadcast_to_party(
@@ -157,7 +188,7 @@ class ConversationHandler:
         )
 
         logger.info(
-            f"[ConversationHandler] Processed action for {player_name} in chat {chat_id}: {message_text[:50]}..."
+            f"[ConversationHandler] Processed action for {result.get('player_name', 'Unknown')} in chat {chat_id}: {message_text[:50]}..."
         )
 
     def register_handler(self, application):
@@ -175,9 +206,57 @@ class ConversationHandler:
         logger.info("[ConversationHandler] Conversational message handler registered.")
 
 
-def register_conversation_handler(application, game_service: GameService, campaign_manager: CampaignManager):
+def register_conversation_handler(
+    application,
+    process_action_use_case: ProcessPlayerActionUseCase = None,
+    campaign_manager: CampaignManager = None,
+    game_service: GameService = None,
+    story_director=None,
+):
     """
     Convenience function to register the conversation handler.
+    
+    Args:
+        application: Telegram application instance
+        process_action_use_case: Caso de uso para procesar acciones (opcional)
+        campaign_manager: CampaignManager instance (opcional, obtenido de bot_data si no se proporciona)
+        game_service: GameService instance (opcional, para crear caso de uso si no se proporciona)
+        story_director: StoryDirector instance (opcional, para crear caso de uso si no se proporciona)
     """
-    handler = ConversationHandler(game_service, campaign_manager)
+    # Si no se proporciona el caso de uso, crearlo
+    if process_action_use_case is None:
+        # Obtener servicios de bot_data si no se proporcionan
+        if campaign_manager is None:
+            campaign_manager = application.bot_data.get("campaign_manager")
+        if game_service is None:
+            game_service = application.bot_data.get("game_service")
+        if story_director is None:
+            story_director = application.bot_data.get("story_director")
+
+        if not all([game_service, story_director]):
+            logger.warning(
+                "[ConversationHandler] No se pueden crear servicios necesarios. "
+                "Asegúrate de que estén en bot_data o pásalos como parámetros."
+            )
+            return
+
+        # Crear DirectorLink
+        from core.story_director.director_link import DirectorLink
+
+        director_link = DirectorLink(story_director)
+
+        # Crear caso de uso
+        from core.use_cases.process_player_action import ProcessPlayerActionUseCase
+
+        process_action_use_case = ProcessPlayerActionUseCase(
+            game_service=game_service,
+            story_director=story_director,
+            director_link=director_link,
+        )
+
+    # Obtener campaign_manager si no se proporciona
+    if campaign_manager is None:
+        campaign_manager = application.bot_data.get("campaign_manager")
+
+    handler = ConversationHandler(process_action_use_case, campaign_manager)
     handler.register_handler(application)
