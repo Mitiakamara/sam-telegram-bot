@@ -60,8 +60,12 @@ class ServiceContainer:
                 logger.info("[ServiceContainer] StoryDirector creado con CampaignManager inyectado.")
             else:
                 # Versión antigua - crear sin parámetros
+                # IMPORTANTE: Reemplazar el CampaignManager interno con el del container
+                # para evitar duplicación de estado
                 self._story_director = StoryDirector()
-                logger.info("[ServiceContainer] StoryDirector creado (versión sin inyección de dependencias).")
+                # Reemplazar el campaign_manager interno con el compartido
+                self._story_director.campaign_manager = self.campaign_manager
+                logger.info("[ServiceContainer] StoryDirector creado y CampaignManager compartido asignado.")
         return self._story_director
 
     @property
