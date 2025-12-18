@@ -264,22 +264,23 @@ def register_createcharacter_conversation(application, campaign_manager):
         # Handle done
         elif callback_data == "attr_done":
             # Validate allocation
+            remaining = point_buy.get_remaining_points(attributes)
             is_valid, error = point_buy.validate_allocation(attributes)
+            
+            # Si la validación falla pero quedan 1-2 puntos, permitir avanzar con advertencia
+            # (puede ser difícil usar exactamente todos los puntos)
             if not is_valid:
-                # Si el error es sobre puntos restantes pero es menor a 3, permitir avanzar con advertencia
-                remaining = point_buy.get_remaining_points(attributes)
                 if remaining > 0 and remaining <= 2:
                     # Permitir avanzar con advertencia
-                    await query.answer(f"⚠️ Te quedan {remaining} puntos sin usar. Puedes continuar o volver a ajustar.", show_alert=True)
-                    # Continuar con el flujo normal
-                elif remaining > 2:
-                    # No permitir avanzar si quedan muchos puntos
-                    await query.answer(error, show_alert=True)
-                    return ALLOCATE_ATTRIBUTES
+                    await query.answer(f"⚠️ Te quedan {remaining} puntos sin usar. Continuando...", show_alert=False)
+                    # Continuar con el flujo normal (no retornar ALLOCATE_ATTRIBUTES)
                 else:
-                    # Otro tipo de error
+                    # Otro tipo de error o quedan muchos puntos
                     await query.answer(error, show_alert=True)
                     return ALLOCATE_ATTRIBUTES
+            elif remaining > 0 and remaining <= 2:
+                # Si es válido pero quedan puntos, mostrar advertencia informativa
+                await query.answer(f"⚠️ Te quedan {remaining} puntos sin usar.", show_alert=False)
             
             # Attributes are valid, move to skills
             race = data.get("race", "")
