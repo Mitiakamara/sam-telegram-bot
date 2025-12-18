@@ -1,8 +1,8 @@
 """
 Process Player Action Use Case
 -------------------------------
-Caso de uso: Procesar acción de jugador.
-Separa la lógica de negocio del handler de Telegram.
+Caso de uso: Procesar accion de jugador.
+Separa la logica de negocio del handler de Telegram.
 """
 
 import logging
@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 
 class ProcessPlayerActionUseCase:
     """
-    Caso de uso: Procesar acción de jugador.
+    Caso de uso: Procesar accion de jugador.
     
     Coordina:
-    1. Validación del jugador
-    2. Procesamiento de acción a través de GameAPI
-    3. Procesamiento narrativo a través de DirectorLink
-    4. Actualización de estado emocional y temas
+    1. Validacion del jugador
+    2. Procesamiento de accion a traves de GameAPI
+    3. Procesamiento narrativo a traves de DirectorLink
+    4. Actualizacion de estado emocional y temas
     """
 
     def __init__(
@@ -32,68 +32,45 @@ class ProcessPlayerActionUseCase:
         story_director: IStoryDirector,
         director_link: DirectorLink,
     ):
-        """
-        Inicializa el caso de uso.
-        
-        Args:
-            game_service: Servicio para procesar acciones del juego
-            story_director: Director narrativo
-            director_link: Enlace para procesar resultados narrativos
-        """
         self.game_service = game_service
         self.story_director = story_director
         self.director_link = director_link
 
-    async def execute(
-        self, player_id: int, action_text: str
-    ) -> Dict[str, Any]:
-        """
-        Ejecuta el caso de uso completo.
-        
-        Args:
-            player_id: ID de Telegram del jugador
-            action_text: Acción en lenguaje natural
-        
-        Returns:
-            Dict con:
-                - narrative: Texto narrativo procesado
-                - player_name: Nombre del jugador
-                - event: Evento dinámico si se generó (opcional)
-        
-        Raises:
-            PlayerNotFoundError: Si el jugador no existe
-            GameAPIError: Si hay error comunicándose con GameAPI
-        """
+    async def execute(self, player_id: int, action_text: str) -> Dict[str, Any]:
         # 1. Validar jugador
         player = self.story_director.get_player(player_id)
         if not player:
-            raise PlayerNotFoundError(
-                f"Jugador con ID {player_id} no encontrado"
-            )
+            raise PlayerNotFoundError(f"Jugador con ID {player_id} no encontrado")
 
         player_name = player.get("name", "Unknown")
 
-        # 2. Procesar acción a través de GameAPI
-        # Obtener contexto de la escena actual
+        # 2. Obtener contexto de la escena actual
         scene_context = None
         try:
             current_scene_data = self.story_director.get_current_scene()
             if current_scene_data.get("found") and current_scene_data.get("scene"):
                 scene = current_scene_data["scene"]
-                scene_context = {
-                    "title": scene.get("title", ""),
-                    "description": scene.get("narration", scene.get("description", "")),
-                    "location": scene.get("title", ""),
-                    "npcs": [npc.get("name", npc) if isinstance(npc, dict) else npc 
-                             for npc in scene.get("npcs", [])],
-                    "options": [opt.get("text", opt) if isinstance(opt, dict) else opt 
-                                for opt in scene.get("options", [])],
-                    "mood": scene.get("mood", scene.get("scene_type", "")),
-                }
-                logger.info(f"[ProcessPlayerAction] Contexto de escena: {scene_context.get('title')}")
+                scene_title = scene.get("title", "")
+                
+                # Solo usar contexto si es una escena real (no generica)
+                if scene_title and scene_title not in ["Escena actual", "Unknown", ""]:
+                    scene_context = {
+                        "title": scene_title,
+                        "description": scene.get("narration", scene.get("description", "")),
+                        "location": scene_title,
+                        "npcs": [npc.get("name", npc) if isinstance(npc, dict) else npc 
+                                 for npc in scene.get("npcs", [])],
+                        "options": [opt.get("text", opt) if isinstance(opt, dict) else opt 
+                                    for opt in scene.get("options", [])],
+                        "mood": scene.get("mood", scene.get("scene_type", "")),
+                    }
+                    logger.info(f"[ProcessPlayerAction] Contexto de escena: {scene_title}")
+                else:
+                    logger.warning("[ProcessPlayerAction] Escena generica detectada. Usa /loadcampaign para cargar una aventura.")
         except Exception as e:
             logger.warning(f"[ProcessPlayerAction] No se pudo obtener contexto de escena: {e}")
 
+        # 3. Procesar accion a traves de GameAPI
         result = await self.game_service.process_action(
             player_name=player_name, 
             action_text=action_text,
@@ -105,22 +82,22 @@ class ProcessPlayerActionUseCase:
             error_msg = result.get("error", "Error desconocido")
             raise GameAPIError(f"Error del GameAPI: {error_msg}")
 
-        # 3. Obtener respuesta narrativa
+        # 4. Obtener respuesta narrativa
         narrative_raw = result.get("result", "")
         event = result.get("event")
 
-        # 4. Procesar resultado narrativo a través de DirectorLink
+        # 5. Procesar resultado narrativo a traves de DirectorLink
         game_result = {
             "action": action_text,
             "outcome": "success" if result.get("success") else "failure",
-            "emotion": "neutral",  # Se puede extraer del resultado si está disponible
+            "emotion": "neutral",
             "description": narrative_raw,
             "event": event,
         }
 
         narrative = await self.director_link.process_game_result(game_result)
 
-        # 5. Actualizar estado emocional si hay evento (si está disponible)
+        # 6. Actualizar estado emocional si hay evento
         if event and hasattr(self.story_director, "emotion_tracker"):
             event_type = event.get("event_type", "")
             emotion_tracker = self.story_director.emotion_tracker
@@ -128,23 +105,16 @@ class ProcessPlayerActionUseCase:
             if event_type in ["combat_victory", "triumph"]:
                 if hasattr(emotion_tracker, "record_emotion"):
                     emotion_tracker.record_emotion("triumph", 0.8)
-                elif hasattr(emotion_tracker, "set_emotion"):
-                    emotion_tracker.set_emotion("triumph")
             elif event_type in ["setback", "loss"]:
                 if hasattr(emotion_tracker, "record_emotion"):
                     emotion_tracker.record_emotion("setback", 0.7)
-                elif hasattr(emotion_tracker, "set_emotion"):
-                    emotion_tracker.set_emotion("setback")
 
-            # 6. Detectar tema narrativo del evento (si está disponible)
             if hasattr(self.story_director, "theme_tracker"):
                 event_narration = event.get("event_narration", "")
                 if event_narration:
                     game_state = {"description": event_narration}
                     theme = self.story_director.theme_tracker.detect_theme(game_state)
-                    logger.debug(
-                        f"[ProcessPlayerActionUseCase] Tema detectado: {theme}"
-                    )
+                    logger.debug(f"[ProcessPlayerAction] Tema detectado: {theme}")
 
         return {
             "narrative": narrative,
