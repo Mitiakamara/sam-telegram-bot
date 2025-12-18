@@ -398,6 +398,13 @@ def register_createcharacter_conversation(application, campaign_manager):
             summary += f"{background_feature['description']}"
         
         await update.message.reply_text(summary, parse_mode="Markdown")
+        
+        # IMPORTANTE: Limpiar character_data para que el ConversationHandler de gameplay
+        # pueda procesar los mensajes del usuario
+        if "character_data" in context.user_data:
+            del context.user_data["character_data"]
+            logger.info(f"[CreateCharacterHandler] character_data limpiado de user_data")
+        
         return ConversationHandler.END
 
     conv_handler = ConversationHandler(
