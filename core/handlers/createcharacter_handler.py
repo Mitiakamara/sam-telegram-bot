@@ -9,6 +9,8 @@ from telegram.ext import (
 )
 import logging
 
+logger = logging.getLogger("CreateCharacterHandler")
+
 from core.character_builder.builder_interactive import CharacterBuilderInteractive
 from core.character_builder.point_buy_system import PointBuySystem, ATTRIBUTES as ATTRIBUTE_NAMES
 
@@ -49,7 +51,7 @@ def register_createcharacter_conversation(application, campaign_manager):
         
         # Show all attributes status
         message += "📊 Atributos:\n"
-        for i, attr in enumerate(ATTRIBUTES):
+        for i, attr in enumerate(ATTRIBUTE_NAMES):
             value = attributes.get(attr, 8)
             cost = point_buy.get_cost(value)
             marker = "👉" if i == current_index else "  "
@@ -338,11 +340,18 @@ def register_createcharacter_conversation(application, campaign_manager):
         # Add telegram_id to character
         character["telegram_id"] = user_id
         
+        # Guardar en campaign_manager
         campaign_manager.add_player(
             telegram_id=user_id,
             player_name=character["name"],
             player_data=character,
         )
+        
+        # IMPORTANTE: También guardar en StoryDirector para que ProcessPlayerActionUseCase lo encuentre
+        story_director = context.bot_data.get("story_director")
+        if story_director:
+            story_director.players[user_id] = character
+            logger.info(f"[CreateCharacterHandler] Personaje {character['name']} también guardado en StoryDirector")
         
         # Build summary message
         race = character.get("race", "")
