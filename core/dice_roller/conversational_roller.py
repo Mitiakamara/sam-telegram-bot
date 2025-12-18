@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 SKILL_MAP = {
     'acrobatics': 'Acrobatics', 'acrobacias': 'Acrobatics',
+    'percepcion': 'Perception', 'perception': 'Perception',
     'animal handling': 'Animal Handling', 'trato con animales': 'Animal Handling',
     'arcana': 'Arcana', 'arcano': 'Arcana',
     'athletics': 'Athletics', 'atletismo': 'Athletics',
@@ -80,8 +81,13 @@ class ConversationalRoller:
         return None
     
     def _extract_skill_from_text(self, text):
+        # Normalizar tildes
+        import unicodedata
+        text_norm = unicodedata.normalize('NFD', text)
+        text_norm = ''.join(c for c in text_norm if unicodedata.category(c) != 'Mn')
+        
         for skill_key, skill_name in SKILL_MAP.items():
-            if skill_key in text:
+            if skill_key in text or skill_key in text_norm:
                 return skill_name
         return None
     
