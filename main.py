@@ -1,5 +1,6 @@
 import os
 import logging
+import httpx
 from dotenv import load_dotenv
 
 from telegram.ext import ApplicationBuilder
@@ -15,7 +16,7 @@ from core.handlers.conversation_handler import register_conversation_handler
 from core.story_director.story_director import StoryDirector
 # importa GameService
 from core.services.game_service import GameService
-# importa ServiceContainer para inyección de dependencias
+# importa ServiceContainer para inyeccion de dependencias
 from core.container.service_container import ServiceContainer
 
 # ---------------------------------------------------------------------
@@ -28,22 +29,39 @@ logging.basicConfig(
 logger = logging.getLogger("SAM-Bot")
 
 
+# ---------------------------------------------------------------------
+# KEEP-ALIVE PARA GAMEAPI
+# ---------------------------------------------------------------------
+async def keep_alive_gameapi(context):
+    """Hace ping al GameAPI cada 10 minutos para mantenerlo despierto."""
+    api_url = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{api_url}/health")
+            if response.status_code == 200:
+                logger.info("[KeepAlive] GameAPI ping exitoso - servicio activo")
+            else:
+                logger.warning(f"[KeepAlive] GameAPI respondio con status {response.status_code}")
+    except Exception as e:
+        logger.warning(f"[KeepAlive] No se pudo contactar GameAPI: {e}")
+
+
 def main() -> None:
-    """Punto de entrada síncrono, compatible con Render."""
+    """Punto de entrada sincrono, compatible con Render."""
     load_dotenv()
 
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not bot_token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN no está definido en el entorno.")
+        raise RuntimeError("TELEGRAM_BOT_TOKEN no esta definido en el entorno.")
 
-    logger.info("🤖 Iniciando SAM The Dungeon Bot...")
+    logger.info("Iniciando SAM The Dungeon Bot...")
 
-    # Crear ServiceContainer para gestión centralizada de servicios
+    # Crear ServiceContainer para gestion centralizada de servicios
     container = ServiceContainer()
     
-    logger.info("✅ ServiceContainer creado - Servicios disponibles bajo demanda")
+    logger.info("ServiceContainer creado - Servicios disponibles bajo demanda")
 
-    # construimos la aplicación de telegram
+    # construimos la aplicacion de telegram
     application = ApplicationBuilder().token(bot_token).build()
     
     # Guardar container y servicios en bot_data para que los handlers puedan accederlos
@@ -58,12 +76,10 @@ def main() -> None:
     # registramos handlers narrativos (/scene, /event)
     register_narrative_handlers(application)
     
-    # registramos handlers de campaña (/progress, /restart, /loadcampaign)
+    # registramos handlers de campana (/progress, /restart, /loadcampaign)
     register_campaign_handlers(application)
     
     # registramos handler conversacional (procesa mensajes libres)
-    # IMPORTANTE: Este debe ir DESPUÉS de los command handlers
-    # Ahora usa casos de uso para separar lógica de negocio
     register_conversation_handler(
         application,
         campaign_manager=container.campaign_manager,
@@ -79,8 +95,16 @@ def main() -> None:
 
     application.add_error_handler(error_handler)
 
-    logger.info("🤖 SAM The Dungeon Bot iniciado correctamente.")
-    logger.info("✅ Modo conversacional activado - Los jugadores pueden usar lenguaje natural.")
+    # ---------------------------------------------------------------------
+    # KEEP-ALIVE JOB: Ping al GameAPI cada 10 minutos
+    # ---------------------------------------------------------------------
+    job_queue = application.job_queue
+    # Primer ping despues de 30 segundos, luego cada 10 minutos (600 segundos)
+    job_queue.run_repeating(keep_alive_gameapi, interval=600, first=30, name="gameapi_keepalive")
+    logger.info("[KeepAlive] Programado ping al GameAPI cada 10 minutos")
+
+    logger.info("SAM The Dungeon Bot iniciado correctamente.")
+    logger.info("Modo conversacional activado - Los jugadores pueden usar lenguaje natural.")
     logger.info("Esperando comandos y mensajes en Telegram...")
 
     # IMPORTANTE: usa polling directo, sin asyncio.run, como ya viste que Render acepta
