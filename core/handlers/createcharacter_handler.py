@@ -10,7 +10,7 @@ from telegram.ext import (
 import logging
 
 from core.character_builder.builder_interactive import CharacterBuilderInteractive
-from core.character_builder.point_buy_system import PointBuySystem, ATTRIBUTES
+from core.character_builder.point_buy_system import PointBuySystem, ATTRIBUTES as ATTRIBUTE_NAMES
 
 # Estados de conversación
 (
@@ -19,7 +19,7 @@ from core.character_builder.point_buy_system import PointBuySystem, ATTRIBUTES
     CLASS,
     BACKGROUND,
     ATTRIBUTE_METHOD,  # Choose point buy or standard array
-    ATTRIBUTES,  # Point buy allocation
+    ALLOCATE_ATTRIBUTES,  # Point buy allocation
     SKILLS,
     CONFIRM,
 ) = range(8)
@@ -38,7 +38,7 @@ def register_createcharacter_conversation(application, campaign_manager):
             context.user_data["point_buy_system"] = point_buy
         attributes = data.get("attributes", {})
         current_index = data.get("current_attr_index", 0)
-        current_attr = ATTRIBUTES[current_index]
+        current_attr = ATTRIBUTE_NAMES[current_index]
         current_value = attributes.get(current_attr, 8)
         remaining_points = point_buy.get_remaining_points(attributes)
         
@@ -77,7 +77,7 @@ def register_createcharacter_conversation(application, campaign_manager):
         nav_row = []
         if current_index > 0:
             nav_row.append(InlineKeyboardButton("◀️ Anterior", callback_data="attr_prev"))
-        if current_index < len(ATTRIBUTES) - 1:
+        if current_index < len(ATTRIBUTE_NAMES) - 1:
             nav_row.append(InlineKeyboardButton("Siguiente ▶️", callback_data="attr_next"))
         if nav_row:
             keyboard.append(nav_row)
@@ -192,13 +192,13 @@ def register_createcharacter_conversation(application, campaign_manager):
         elif method == "point_buy":
             # Initialize point buy
             data["attribute_method"] = "point_buy"
-            data["attributes"] = {attr: 8 for attr in ATTRIBUTES}  # Start at minimum
+            data["attributes"] = {attr: 8 for attr in ATTRIBUTE_NAMES}  # Start at minimum
             data["current_attr_index"] = 0  # Start with STR
             context.user_data["point_buy_system"] = PointBuySystem()
             
             # Show point buy interface for first attribute
             await _show_point_buy_interface(query, data, context)
-            return ATTRIBUTES
+            return ALLOCATE_ATTRIBUTES
         
         return ATTRIBUTE_METHOD
 
@@ -210,7 +210,7 @@ def register_createcharacter_conversation(application, campaign_manager):
         point_buy: PointBuySystem = context.user_data.get("point_buy_system", PointBuySystem())
         attributes = data.get("attributes", {})
         current_index = data.get("current_attr_index", 0)
-        current_attr = ATTRIBUTES[current_index]
+        current_attr = ATTRIBUTE_NAMES[current_index]
         current_value = attributes.get(current_attr, 8)
         remaining_points = point_buy.get_remaining_points(attributes)
         
@@ -229,7 +229,7 @@ def register_createcharacter_conversation(application, campaign_manager):
                     await _show_point_buy_interface(query, data, context)
                 else:
                     await query.answer("No tienes suficientes puntos o el valor es demasiado alto.", show_alert=True)
-            return ATTRIBUTES
+            return ALLOCATE_ATTRIBUTES
         
         # Handle attribute decrease
         elif callback_data.startswith("attr_dec_"):
@@ -239,20 +239,20 @@ def register_createcharacter_conversation(application, campaign_manager):
                 data["attributes"] = attributes
                 data["modifiers"] = {k: (v - 10) // 2 for k, v in attributes.items()}
                 await _show_point_buy_interface(query, data, context)
-            return ATTRIBUTES
+            return ALLOCATE_ATTRIBUTES
         
         # Handle navigation
         elif callback_data == "attr_prev":
             if current_index > 0:
                 data["current_attr_index"] = current_index - 1
                 await _show_point_buy_interface(query, data, context)
-            return ATTRIBUTES
+            return ALLOCATE_ATTRIBUTES
         
         elif callback_data == "attr_next":
-            if current_index < len(ATTRIBUTES) - 1:
+            if current_index < len(ATTRIBUTE_NAMES) - 1:
                 data["current_attr_index"] = current_index + 1
                 await _show_point_buy_interface(query, data, context)
-            return ATTRIBUTES
+            return ALLOCATE_ATTRIBUTES
         
         # Handle done
         elif callback_data == "attr_done":
@@ -260,7 +260,7 @@ def register_createcharacter_conversation(application, campaign_manager):
             is_valid, error = point_buy.validate_allocation(attributes)
             if not is_valid:
                 await query.answer(error, show_alert=True)
-                return ATTRIBUTES
+                return ALLOCATE_ATTRIBUTES
             
             # Attributes are valid, move to skills
             race = data.get("race", "")
@@ -300,9 +300,9 @@ def register_createcharacter_conversation(application, campaign_manager):
         # Info button (no action)
         elif callback_data == "attr_info":
             await query.answer()
-            return ATTRIBUTES
+            return ALLOCATE_ATTRIBUTES
         
-        return ATTRIBUTES
+        return ALLOCATE_ATTRIBUTES
 
     # Old attributes_step removed - now handled by point buy system
 
@@ -381,7 +381,7 @@ def register_createcharacter_conversation(application, campaign_manager):
             CLASS: [CallbackQueryHandler(class_step)],
             BACKGROUND: [CallbackQueryHandler(background_step)],
             ATTRIBUTE_METHOD: [CallbackQueryHandler(attribute_method_step)],
-            ATTRIBUTES: [CallbackQueryHandler(attributes_step)],
+            ALLOCATE_ATTRIBUTES: [CallbackQueryHandler(attributes_step)],
             SKILLS: [MessageHandler(filters.TEXT & ~filters.COMMAND, skills_step)],
             CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_step)],
         },
