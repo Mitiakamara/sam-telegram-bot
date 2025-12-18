@@ -29,7 +29,23 @@ async def scene(update: Update, context: ContextTypes.DEFAULT_TYPE):
     campaign_name = campaign_manager.state.get("campaign_name", "")
     current_scene = campaign_manager.state.get("current_scene", "")
     
-    logger.info(f"[NarrativeHandler] Direct check - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}, campaign_name: {campaign_name}, current_scene: {current_scene}")
+    # NUEVO: Verificar si hay una ultima campana cargada guardada en bot_data
+    last_loaded_campaign = context.bot_data.get("last_loaded_campaign")
+    
+    logger.info(f"[NarrativeHandler] Direct check - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}, campaign_name: {campaign_name}, current_scene: {current_scene}, last_loaded_campaign: {last_loaded_campaign}")
+    
+    # NUEVO: Si adventure_data es None pero hay una ultima campana cargada, recargarla automaticamente
+    default_campaigns = ["TheGeniesWishes", "The Genie's Wishes - Chapter 1: Cold Open"]
+    if not adventure_data and last_loaded_campaign and last_loaded_campaign not in default_campaigns:
+        logger.warning(f"[NarrativeHandler] adventure_data es None pero last_loaded_campaign='{last_loaded_campaign}'. Recargando automaticamente...")
+        try:
+            sd.load_campaign(last_loaded_campaign)
+            adventure_data = campaign_manager.state.get("adventure_data")
+            current_scene_id = campaign_manager.state.get("current_scene_id")
+            campaign_name = last_loaded_campaign
+            logger.info(f"[NarrativeHandler] Recarga automatica exitosa - adventure_data: {adventure_data is not None}, current_scene_id: {current_scene_id}")
+        except Exception as e:
+            logger.error(f"[NarrativeHandler] Error en recarga automatica de '{last_loaded_campaign}': {e}", exc_info=True)
     
     # Logging detallado del estado
     if adventure_data:

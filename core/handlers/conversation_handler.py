@@ -126,16 +126,22 @@ class ConversationHandler:
         if len(message_text) < 2:
             return
 
-        # IMPORTANTE: Verificar PRIMERO si el usuario está en una conversación activa
+        # IMPORTANTE: Verificar si el usuario está en una conversación activa
         # python-telegram-bot almacena el estado de ConversationHandler en user_data
-        # Si hay datos de creación de personaje, significa que está en una conversación activa
-        if "character_data" in context.user_data:
-            logger.info(f"[ConversationHandler] Usuario {user_id} tiene character_data activo, ignorando mensaje '{message_text[:30]}...' durante creación de personaje")
-            return
+        # con la clave del nombre del ConversationHandler + "_conversation"
+        # Si hay un estado de conversación activo, no procesar aquí
+        conversation_keys = [
+            "createcharacter_conversation",  # Nombre del ConversationHandler
+            "character_data",  # Datos de creación de personaje
+        ]
+        for key in conversation_keys:
+            if key in context.user_data:
+                logger.debug(f"[ConversationHandler] Usuario {user_id} tiene conversación activa (key: {key}), ignorando mensaje")
+                return
         
-        # Verificar también por el nombre del ConversationHandler (por si acaso)
-        if "createcharacter_conversation" in context.user_data:
-            logger.info(f"[ConversationHandler] Usuario {user_id} tiene createcharacter_conversation activo, ignorando mensaje")
+        # Verificar también si hay datos de creación de personaje (indica conversación activa)
+        if "character_data" in context.user_data:
+            logger.debug(f"[ConversationHandler] Usuario {user_id} tiene character_data, ignorando mensaje durante creación")
             return
 
         # Get player character from campaign

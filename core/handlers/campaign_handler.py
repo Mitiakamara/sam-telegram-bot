@@ -54,6 +54,10 @@ async def loadcampaign(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"[CampaignHandler] Cargando campaña '{slug}'...")
         sd.load_campaign(slug)
         
+        # IMPORTANTE: Guardar el slug en bot_data para recargar si es necesario
+        context.bot_data["last_loaded_campaign"] = slug
+        logger.info(f"[CampaignHandler] Slug guardado en bot_data")
+        
         # Verificar que adventure_data se guardó correctamente
         adventure_data = sd.campaign_manager.state.get("adventure_data")
         current_scene_id = sd.campaign_manager.state.get("current_scene_id")
