@@ -44,12 +44,24 @@ class ServiceContainer:
         """
         Obtiene o crea la instancia de StoryDirector.
         Inyecta automáticamente CampaignManager para evitar duplicación.
+        Compatible con versiones que aceptan y no aceptan campaign_manager.
         """
         if self._story_director is None:
-            self._story_director = StoryDirector(
-                campaign_manager=self.campaign_manager
-            )
-            logger.info("[ServiceContainer] StoryDirector creado con CampaignManager inyectado.")
+            # Intentar crear con campaign_manager (Fase 1)
+            # Si falla, crear sin parámetros (versión antigua)
+            import inspect
+            sig = inspect.signature(StoryDirector.__init__)
+            
+            if 'campaign_manager' in sig.parameters:
+                # Versión que acepta campaign_manager
+                self._story_director = StoryDirector(
+                    campaign_manager=self.campaign_manager
+                )
+                logger.info("[ServiceContainer] StoryDirector creado con CampaignManager inyectado.")
+            else:
+                # Versión antigua - crear sin parámetros
+                self._story_director = StoryDirector()
+                logger.info("[ServiceContainer] StoryDirector creado (versión sin inyección de dependencias).")
         return self._story_director
 
     @property
