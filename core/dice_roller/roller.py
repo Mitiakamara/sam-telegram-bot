@@ -1,4 +1,4 @@
-﻿# sam-telegram-bot/core/dice_roller/roller.py
+# sam-telegram-bot/core/dice_roller/roller.py
 import random
 import re
 from typing import Optional, Tuple, List

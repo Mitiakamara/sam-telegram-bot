@@ -1,4 +1,4 @@
-﻿"""
+"""
 Conversational Message Handler
 Handles free-form player messages (non-commands) and routes them to GameAPI
 for natural language interpretation and narrative response.

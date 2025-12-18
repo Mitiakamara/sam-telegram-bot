@@ -40,6 +40,19 @@ class GameService:
 
         # Agregar datos del personaje si estan disponibles
         if character_data:
+            # Procesar equipment - puede ser dict o list
+            equipment = character_data.get("equipment", {})
+            if isinstance(equipment, dict):
+                # Nuevo formato con weapons, armor, shield
+                equipment_payload = {
+                    "weapons": equipment.get("weapons", []),
+                    "armor": equipment.get("armor"),
+                    "shield": equipment.get("shield"),
+                }
+            else:
+                # Formato antiguo (lista)
+                equipment_payload = {"weapons": equipment if equipment else []}
+            
             payload["character"] = {
                 "name": character_data.get("name"),
                 "race": character_data.get("race"),
@@ -48,9 +61,11 @@ class GameService:
                 "attributes": character_data.get("attributes"),
                 "skills": character_data.get("skills", []),
                 "spells": character_data.get("spells", []),
-                "equipment": character_data.get("equipment", []),
+                "equipment": equipment_payload,
+                "inventory": character_data.get("inventory", []),
+                "gold": character_data.get("gold", 0),
             }
-            logger.debug(f"[GameService] Enviando datos del personaje")
+            logger.debug(f"[GameService] Enviando datos del personaje: {character_data.get('class')}")
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
