@@ -16,7 +16,13 @@ class GameService:
     def __init__(self):
         self.api_url = os.getenv("GAME_API_URL", "https://sam-gameapi.onrender.com").strip("/")
 
-    async def process_action(self, player_name: str, action_text: str, mode: str = "action") -> Dict[str, Any]:
+    async def process_action(
+        self, 
+        player_name: str, 
+        action_text: str, 
+        mode: str = "action",
+        character_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Envía una acción del jugador al GameAPI.
         El GameAPI usa AI para interpretar el lenguaje natural y generar respuesta narrativa.
@@ -31,6 +37,20 @@ class GameService:
         """
         endpoint = f"{self.api_url}/game/action"
         payload = {"player": player_name, "action": action_text}
+
+        # Agregar datos del personaje si estan disponibles
+        if character_data:
+            payload["character"] = {
+                "name": character_data.get("name"),
+                "race": character_data.get("race"),
+                "character_class": character_data.get("class"),
+                "level": character_data.get("level", 1),
+                "attributes": character_data.get("attributes"),
+                "skills": character_data.get("skills", []),
+                "spells": character_data.get("spells", []),
+                "equipment": character_data.get("equipment", []),
+            }
+            logger.debug(f"[GameService] Enviando datos del personaje")
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:

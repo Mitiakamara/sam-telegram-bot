@@ -75,7 +75,9 @@ class ProcessPlayerActionUseCase:
 
         # 2. Procesar acción a través de GameAPI
         result = await self.game_service.process_action(
-            player_name=player_name, action_text=action_text
+            player_name=player_name, 
+            action_text=action_text,
+            character_data=player  # Enviar datos completos del personaje
         )
 
         if not result.get("success"):
