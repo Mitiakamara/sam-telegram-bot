@@ -74,10 +74,31 @@ class ProcessPlayerActionUseCase:
         player_name = player.get("name", "Unknown")
 
         # 2. Procesar acción a través de GameAPI
+        # Obtener contexto de la escena actual
+        scene_context = None
+        try:
+            current_scene_data = self.story_director.get_current_scene()
+            if current_scene_data.get("found") and current_scene_data.get("scene"):
+                scene = current_scene_data["scene"]
+                scene_context = {
+                    "title": scene.get("title", ""),
+                    "description": scene.get("narration", scene.get("description", "")),
+                    "location": scene.get("title", ""),
+                    "npcs": [npc.get("name", npc) if isinstance(npc, dict) else npc 
+                             for npc in scene.get("npcs", [])],
+                    "options": [opt.get("text", opt) if isinstance(opt, dict) else opt 
+                                for opt in scene.get("options", [])],
+                    "mood": scene.get("mood", scene.get("scene_type", "")),
+                }
+                logger.info(f"[ProcessPlayerAction] Contexto de escena: {scene_context.get('title')}")
+        except Exception as e:
+            logger.warning(f"[ProcessPlayerAction] No se pudo obtener contexto de escena: {e}")
+
         result = await self.game_service.process_action(
             player_name=player_name, 
             action_text=action_text,
-            character_data=player  # Enviar datos completos del personaje
+            character_data=player,
+            scene_context=scene_context
         )
 
         if not result.get("success"):

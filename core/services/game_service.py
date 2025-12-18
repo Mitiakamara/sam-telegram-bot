@@ -21,7 +21,8 @@ class GameService:
         player_name: str, 
         action_text: str, 
         mode: str = "action",
-        character_data: Optional[Dict[str, Any]] = None
+        character_data: Optional[Dict[str, Any]] = None,
+        scene_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Envía una acción del jugador al GameAPI.
@@ -37,6 +38,18 @@ class GameService:
         """
         endpoint = f"{self.api_url}/game/action"
         payload = {"player": player_name, "action": action_text}
+
+        # Agregar contexto de escena si esta disponible
+        if scene_context:
+            payload["scene"] = {
+                "title": scene_context.get("title"),
+                "description": scene_context.get("description"),
+                "location": scene_context.get("location"),
+                "npcs": scene_context.get("npcs", []),
+                "available_options": scene_context.get("options", []),
+                "mood": scene_context.get("mood"),
+            }
+            logger.debug(f"[GameService] Enviando contexto de escena: {scene_context.get('title')}")
 
         # Agregar datos del personaje si estan disponibles
         if character_data:
