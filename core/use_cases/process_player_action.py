@@ -60,7 +60,7 @@ class ProcessPlayerActionUseCase:
                         "location": scene_title,
                         "npcs": [npc.get("name", npc) if isinstance(npc, dict) else npc 
                                  for npc in scene.get("npcs", [])],
-                        "options": [opt.get("text", opt) if isinstance(opt, dict) else opt 
+                        "options": [opt.get("text") or opt.get("id") or str(opt) if isinstance(opt, dict) else str(opt) 
                                     for opt in scene.get("options", [])],
                         "mood": scene.get("mood", scene.get("scene_type", "")),
                     }
